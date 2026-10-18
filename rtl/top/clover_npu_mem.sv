@@ -4,6 +4,7 @@
 `include "clover_dma.sv"
 `include "clover_scratchpad.sv"
 `include "clover_core.sv"
+`include "clover_tile_mma.sv"
 
 // M4a NPU top: AXI4-Lite CSR + command processor + 2D DMA + 5-stage core +
 // scratchpad.  Kernel code/args are DMA'd into scratchpad before RUN.
@@ -65,7 +66,10 @@ module clover_npu_mem (
     output logic [31:0]  queue_head,
     output logic [31:0]  completion_head,
     output logic         core_active,
-    output logic [31:0]  last_exit_code
+    output logic [31:0]  last_exit_code,
+    output logic         tile_busy,
+    output logic         tile_error,
+    output logic [3:0]   tile_error_code
 );
 
     logic [31:0] queue_base;
@@ -162,8 +166,10 @@ module clover_npu_mem (
     logic [63:0] dma_sp_wr_be;
     logic        dma_sp_wr_ready;
 
+    logic        sp_a_req;
     logic        sp_rd_req;
     logic [17:0] sp_rd_addr;
+    logic [17:0] sp_a_addr_mux;
     logic        sp_wr_req;
     logic [17:0] sp_wr_addr;
     logic [511:0] sp_wr_data;
@@ -178,6 +184,25 @@ module clover_npu_mem (
     logic        core_halted;
     logic [31:0] core_exit_code;
     logic        c_core_active;
+
+    logic        tile_valid;
+    logic [2:0]  tile_op;
+    logic [31:0] tile_desc;
+    logic        tile_busy_i;
+    logic        tile_done;
+    logic        tile_error_i;
+    logic [3:0]  tile_error_code_i;
+    logic        tile_a_req;
+    logic [17:0] tile_a_addr;
+    logic [511:0] tile_a_rdata;
+    logic        tile_b_req;
+    logic [17:0] tile_b_addr;
+    logic [511:0] tile_b_rdata;
+    logic        tile_w_req;
+    logic [17:0] tile_w_addr;
+    logic [511:0] tile_w_data;
+    logic [63:0] tile_w_be;
+    logic        tile_w_ready;
 
     logic        c_imem_req;
     logic [31:0] c_imem_addr;
@@ -205,6 +230,9 @@ module clover_npu_mem (
 
     assign busy = cp_busy;
     assign core_active = core_halted ? 1'b0 : c_core_active;
+    assign tile_busy = tile_busy_i;
+    assign tile_error = tile_error_i;
+    assign tile_error_code = tile_error_code_i;
 
     clover_axi_csr u_csr (
         .clk              (clk),
@@ -405,12 +433,12 @@ module clover_npu_mem (
     assign c_imem_lane = c_imem_addr[5:2];
     assign core_a_addr = {c_imem_addr[17:6], 6'b0};
     assign c_imem_rdata = core_a_rdata[32*c_imem_lane +: 32];
-    assign c_imem_ready = 1'b1;
+    assign c_imem_ready = ~tile_busy_i;
 
     assign c_dmem_lane   = c_dmem_addr[5:2];
     assign c_dmem_offset = c_dmem_addr[1:0];
     assign c_dmem_rdata  = core_b_rdata[32*c_dmem_lane +: 32];
-    assign c_dmem_ready  = 1'b1;
+    assign c_dmem_ready  = ~tile_busy_i;
     assign core_b_addr   = {c_dmem_addr[17:6], 6'b0};
     assign core_w_addr   = {c_dmem_addr[17:6], 6'b0};
 
@@ -438,6 +466,10 @@ module clover_npu_mem (
         .core_sp    (core_sp),
         .core_arg   (core_arg),
         .core_active(c_core_active),
+        .tile_valid (tile_valid),
+        .tile_op    (tile_op),
+        .tile_desc  (tile_desc),
+        .tile_busy  (tile_busy_i),
         .imem_req   (c_imem_req),
         .imem_addr  (c_imem_addr),
         .imem_ready (c_imem_ready),
@@ -458,21 +490,57 @@ module clover_npu_mem (
         .halt_reason()
     );
 
-    // Scratchpad port mux: core owns the ports while active; DMA otherwise.
-    assign sp_wr_req  = c_core_active ? (c_dmem_req && c_dmem_we) : dma_sp_wr_req;
-    assign sp_wr_addr = c_core_active ? core_w_addr : dma_sp_wr_addr;
-    assign sp_wr_data = c_core_active ? core_w_data : dma_sp_wr_data;
-    assign sp_wr_be   = c_core_active ? core_w_be : dma_sp_wr_be;
-    assign dma_sp_wr_ready = c_core_active ? 1'b0 : sp_wr_ready;
+    clover_tile_mma u_tile (
+        .clk        (clk),
+        .rst_n      (rst_n),
+        .start      (tile_valid),
+        .desc_addr  (tile_desc),
+        .busy       (tile_busy_i),
+        .done       (tile_done),
+        .error      (tile_error_i),
+        .error_code (tile_error_code_i),
+        .a_req      (tile_a_req),
+        .a_addr     (tile_a_addr),
+        .a_rdata    (tile_a_rdata),
+        .b_req      (tile_b_req),
+        .b_addr     (tile_b_addr),
+        .b_rdata    (tile_b_rdata),
+        .w_req      (tile_w_req),
+        .w_addr     (tile_w_addr),
+        .w_data     (tile_w_data),
+        .w_be       (tile_w_be),
+        .w_ready    (tile_w_ready)
+    );
 
-    assign sp_rd_req  = c_core_active ? (c_dmem_req && !c_dmem_we) : dma_sp_rd_req;
-    assign sp_rd_addr = c_core_active ? core_b_addr : dma_sp_rd_addr;
+    // Scratchpad port mux: tile > core > DMA.  The core and DMA are
+    // mutually exclusive in the RUN path, and the core stalls on tile_busy.
+    assign sp_wr_req  = tile_busy_i ? tile_w_req :
+                        (c_core_active ? (c_dmem_req && c_dmem_we) : dma_sp_wr_req);
+    assign sp_wr_addr = tile_busy_i ? tile_w_addr :
+                        (c_core_active ? core_w_addr : dma_sp_wr_addr);
+    assign sp_wr_data = tile_busy_i ? tile_w_data :
+                        (c_core_active ? core_w_data : dma_sp_wr_data);
+    assign sp_wr_be   = tile_busy_i ? tile_w_be :
+                        (c_core_active ? core_w_be : dma_sp_wr_be);
+    assign dma_sp_wr_ready = (!tile_busy_i && !c_core_active) ? sp_wr_ready : 1'b0;
+
+    assign sp_rd_req  = tile_busy_i ? tile_b_req :
+                        (c_core_active ? (c_dmem_req && !c_dmem_we) : dma_sp_rd_req);
+    assign sp_rd_addr = tile_busy_i ? tile_b_addr :
+                        (c_core_active ? core_b_addr : dma_sp_rd_addr);
     assign dma_sp_rd_data = core_b_rdata;
+
+    assign sp_a_req  = tile_busy_i ? tile_a_req :
+                       (c_core_active ? c_imem_req : 1'b0);
+    assign sp_a_addr_mux = tile_busy_i ? tile_a_addr : core_a_addr;
+    assign tile_a_rdata = core_a_rdata;
+    assign tile_b_rdata = core_b_rdata;
+    assign tile_w_ready = sp_wr_ready;
 
     clover_scratchpad u_sp (
         .clk     (clk),
-        .a_req   (c_imem_req),
-        .a_addr  (core_a_addr),
+        .a_req   (sp_a_req),
+        .a_addr  (sp_a_addr_mux),
         .a_rdata (core_a_rdata),
         .b_req   (sp_rd_req),
         .b_addr  (sp_rd_addr),

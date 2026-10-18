@@ -44,6 +44,7 @@ module clover_tile_mma (
     logic [2:0]  state;
     logic [31:0] d[0:15];
     logic [3:0]  fetch_index;
+    logic [31:0] desc_addr_q;
     logic [31:0] desc_line;
     logic [31:0] desc_word;
 
@@ -146,7 +147,7 @@ module clover_tile_mma (
         case (state)
         ST_FETCH: begin
             a_req  = 1'b1;
-            a_addr = {desc_addr[17:6], 6'b0};
+            a_addr = {desc_addr_q[17:6], 6'b0};
         end
         ST_LOAD_C: begin
             if (accumulate) begin
@@ -180,6 +181,7 @@ module clover_tile_mma (
             error_q      <= 1'b0;
             error_code_q <= 4'd0;
             fetch_index  <= 4'd0;
+            desc_addr_q  <= 32'd0;
             mi <= 5'd0;
             ni <= 5'd0;
             ki <= 5'd0;
@@ -195,6 +197,7 @@ module clover_tile_mma (
                     error_q      <= 1'b0;
                     error_code_q <= 4'd0;
                     fetch_index  <= 4'd0;
+                    desc_addr_q  <= desc_addr;
                     state        <= ST_FETCH;
                 end
             end

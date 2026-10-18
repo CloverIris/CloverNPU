@@ -57,6 +57,8 @@ def main() -> int:
             ROOT / "rtl" / "dma",
             ROOT / "rtl" / "mem",
             ROOT / "rtl" / "core",
+            ROOT / "rtl" / "fp",
+            ROOT / "rtl" / "tile",
             ROOT / "sim" / "dma",
             ROOT / "sim" / "npu",
         ],

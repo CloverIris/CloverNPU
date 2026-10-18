@@ -107,7 +107,14 @@
 - 16×16×16、8×8×8、accumulate RTL 测试通过；Yosys check 通过。
 - 详见 [RTL Tile MMA](12-rtl-tile-mma.md)。
 
-#### M4c-Integration（下一步）
+#### M4c-Integration（已完成，2026-10-18）
+
+- `tile.mma/tile.wait` 接入 core；tile busy 时让出 scratchpad 端口。
+- 完整 RTL GEMM：CP 队列 + DMA + core + 串行 MMA + completion/IRQ。
+- `M=17,N=19,K=23` 通过；修复 port A 隐式 1-bit、kernel-return rd 检查、descriptor 锁存、结果 DMA 方向四个 bug。
+- 详见 [RTL GEMM](13-rtl-gemm.md)。
+
+#### M4d · RTL VEC 与 FP8/FP4（下一步）
 
 目标：**描述符驱动的 MMA/VEC/CVT/REDUCE 在 RTL 上正确。**
 

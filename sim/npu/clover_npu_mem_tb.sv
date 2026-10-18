@@ -33,6 +33,9 @@ module clover_npu_mem_tb (
     output logic [31:0]  completion_head,
     output logic         core_active,
     output logic [31:0]  last_exit_code,
+    output logic         tile_busy,
+    output logic         tile_error,
+    output logic [3:0]   tile_error_code,
 
     input  logic         host_we,
     input  logic [15:0]  host_addr,
@@ -122,7 +125,10 @@ module clover_npu_mem_tb (
         .queue_head      (queue_head),
         .completion_head (completion_head),
         .core_active     (core_active),
-        .last_exit_code  (last_exit_code)
+        .last_exit_code  (last_exit_code),
+        .tile_busy       (tile_busy),
+        .tile_error      (tile_error),
+        .tile_error_code (tile_error_code)
     );
 
     clover_axi_ram u_ram (

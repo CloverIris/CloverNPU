@@ -17,6 +17,12 @@ module clover_core
     input  logic [31:0] core_arg,
     output logic        core_active,
 
+    // Tile engine issue.
+    output logic        tile_valid,
+    output logic [2:0]  tile_op,
+    output logic [31:0] tile_desc,
+    input  logic        tile_busy,
+
     // Instruction memory (valid/ready, combinational read).
     output logic        imem_req,
     output logic [31:0] imem_addr,
@@ -137,6 +143,7 @@ module clover_core
     logic wb_id_hazard;
     logic mem_stall;
     logic imem_stall;
+    logic tile_stall;
     logic stall_all;
     logic redirect;
     logic halt_event;
@@ -165,7 +172,15 @@ module clover_core
 
     assign mem_stall  = (dmem_req && !dmem_ready);
     assign imem_stall = (imem_req && !imem_ready);
-    assign stall_all  = mem_stall || imem_stall;
+    assign tile_stall = id_ex_valid && id_ex_ctrl.tile &&
+                        (id_ex_ctrl.tile_funct3 <= 3'd3) && tile_busy;
+    assign stall_all  = mem_stall || imem_stall || tile_stall;
+
+    assign tile_op    = id_ex_ctrl.tile_funct3;
+    assign tile_desc  = fwd_rs1;
+    assign tile_valid = id_ex_valid && id_ex_ctrl.tile &&
+                        (id_ex_ctrl.tile_funct3 <= 3'd2) &&
+                        !tile_busy && !halt_event && !stall_all;
 
     // ------------------------------------------------------------ EX stage
     logic [31:0] fwd_rs1;
@@ -338,6 +353,7 @@ module clover_core
     // jalr zero, ra, 0 and targets address 0.
     logic kernel_return;
     assign kernel_return = id_ex_valid && id_ex_ctrl.jump_reg &&
+                           (id_ex_ctrl.rd == 5'd0) &&
                            ((alu_y & ~32'd1) == 32'd0);
 
     assign halt_event = !halted_q &&

@@ -1,6 +1,6 @@
 # 12 · RTL Tile Engine：FP32 单元与串行 MMA
 
-**状态：M4c-MMA 已完成（2026-10-18）**。可综合的 FP32 add/mul、FP16/BF16 解包和串行 16×16×16 MMA 已实现；`16x16x16`、`8x8x8`、accumulate 三组 RTL 测试通过，Yosys `check -assert` 通过。尚未接入 core/NPU top，也还没有 VEC 引擎。
+**状态：M4c-MMA + M4c-Integration 已完成（2026-10-18）**。可综合的 FP32 add/mul、FP16/BF16 解包和串行 16×16×16 MMA 已实现；`16x16x16`、`8x8x8`、accumulate 三组 block 测试通过，Yosys 通过；MMA 已接入 core/NPU，完整 RTL GEMM `17x19x23` 通过。还没有 RTL VEC。
 
 ## 1. FP32 数据通路
 
@@ -51,13 +51,12 @@ PASS tile_mma
 - 次正规输入/输出与结果 flush 到 0；尚未做完整 IEEE 次正规舍入。
 - 单 MAC/cycle，16×16×16 约 4100 cycles；没有 16×16 阵列。
 - 没有 per-tensor/per-channel scale、post-scale/bias 的 RTL（ISS 已支持）。
-- 没有接入 `clover_npu_mem` / core 的 `tile.mma` / `tile.wait`；当前是独立 block 测试。
-- 没有 AXI/命令队列路径；GEMM 仍由 ISS 图 runtime 验证。
+- MMA 已接入 `clover_npu_mem` / core；完整 RTL GEMM 见 [RTL GEMM](13-rtl-gemm.md)。
+- 还没有 RTL VEC；`GEMM → ADD` 图仍只在 ISS 图 runtime 中。
 
 ## 5. 下一步
 
-1. 把 `clover_tile_mma` 接进 `clover_npu_mem`，与 core/DMA 共享 scratchpad 端口。
-2. core `tile.mma` 发出 descriptor，`tile.wait` 真正等待 `busy/done`。
-3. 用同一个 `kernels/gemm.c` 跑 RTL GEMM（先把描述符/数据 DMA 到 scratchpad）。
-4. 补 VEC 引擎，让 RTL 也能跑 `GEMM → ADD` 图。
-5. FP8/FP4 RTL 解包与 scale。
+1. 补 RTL VEC 引擎，让 RTL 也能跑 `GEMM → ADD` 图。
+2. FP8/FP4 RTL 解包与 scale。
+3. 多 shape RTL GEMM 回归（16×16×16 等）。
+4. 图 runtime 的 RTL/Verilator 后端。
