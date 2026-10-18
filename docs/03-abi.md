@@ -88,14 +88,16 @@ kernel 是普通 C 函数：
 void kernel(const struct clover_kernel_args *args);
 ```
 
-command processor 设置：
+v0.1 的 `RUN` 启动约定（M4a 实现）：
 
 - `a0 = args`（scratchpad 地址，1 KB 对齐）
 - `sp = stack_top`（16 B 对齐）
-- `ra = exit_trampoline`
+- `ra = 0`
 - `PC = entry`
 
-kernel 返回时执行 `ret` 到 trampoline；trampoline 执行 `ecall`，`a7=0`（exit），`a0` 为状态码。CP 将状态码写入 completion entry。
+kernel 通过普通 `ret` 返回；`jalr zero, ra, 0` 且 `ra=0` 是 **kernel-return sentinel**：核心停止，`a0` 作为状态码返回给 CP。CP 仅在状态码非 0 时写错误 completion。
+
+独立程序（带 `_start`）仍使用 `_start` → `main` → `ecall(exit)` 路径；两种入口在 ABI 中并存。
 
 kernel 必须：
 

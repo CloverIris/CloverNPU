@@ -183,10 +183,11 @@ make rtl-core-test   # 19 个 C 程序的 ISS/RTL 差分
 make rtl-mem-lint    # scratchpad / AXI-CSR / core+mem lint
 make rtl-mem-synth   # scratchpad / AXI-CSR / core+mem Yosys check
 make rtl-mem-test    # scratchpad + AXI-CSR + DMA + CP + NPU end-to-end
+make rtl-npu-test    # host -> RUN C kernel -> DMA result -> completion
 make check           # 以上全部
 ```
 
-M2 与 M3 已完成。当前 RTL 存储/命令测试以定向用例为主；AXI 随机 backpressure、ring 回绕 1000 条、I/D-cache 一致性尚未覆盖。
+M2、M3 与 M4a 已完成。当前 RTL 存储/命令测试以定向用例为主；AXI 随机 backpressure、ring 回绕 1000 条、I/D-cache 一致性尚未覆盖；tile engine 尚无 RTL。
 
 ## 9. 失败处理约定
 

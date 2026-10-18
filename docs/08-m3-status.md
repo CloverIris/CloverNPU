@@ -65,13 +65,13 @@ make rtl-mem-test
 - DMA 要求源/目的/stride 16 B 对齐、`bytes_per_row` 为 16 B 倍数；不做非对齐拆分。
 - Scratchpad 读是组合逻辑，不是同步 SRAM；没有 bank 冲突检测。
 - 没有 I-cache/D-cache；没有 AXI protocol checker / 随机 backpressure 回归。
-- `clover_npu_mem` 还没有接 5 级核；core 目前通过 `clover_core_mem` 独立验证。
-- 没有 `RUN` 命令；DMA/命令队列先打通，kernel launch 在 M4/M5。
+- 5 级核已在 M4a 接入 `clover_npu_mem`，`RUN` kernel launch 已通过（见 [M4a](09-m4a-core-integration.md)）。
+- Tile engine 尚未实现；kernel 仍只能做标量运算。
 - CSR 的 `STATUS` 只反映 CP/DMA busy；错误码/计数仍是最小实现。
 
 ## 7. 下一步
 
-1. 把 5 级核接入 `clover_npu_mem`，增加 `RUN/WAIT` 命令。
-2. Tile engine（M4）：MMA/VEC/CVT/REDUCE + 描述符。
-3. AXI protocol checker、随机 backpressure、DMA burst。
-4. `libclover` 仿真后端与 host → DMA → core 的 C 程序端到端。
+1. Tile engine（M4b）：MMA/VEC/CVT/REDUCE + 描述符。
+2. AXI protocol checker、随机 backpressure、DMA burst。
+3. `libclover` 仿真后端与 graph runtime。
+4. 编译器 `struct/#include`、kernel 参数 ABI。

@@ -110,6 +110,7 @@ def main() -> int:
             ROOT / "rtl" / "cmd",
             ROOT / "rtl" / "dma",
             ROOT / "rtl" / "mem",
+            ROOT / "rtl" / "core",
             ROOT / "sim" / "dma",
             ROOT / "sim" / "npu",
         ],

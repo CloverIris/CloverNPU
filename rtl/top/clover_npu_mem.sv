@@ -3,9 +3,10 @@
 `include "clover_cmd_proc.sv"
 `include "clover_dma.sv"
 `include "clover_scratchpad.sv"
+`include "clover_core.sv"
 
-// M3b NPU memory subsystem: AXI4-Lite CSR + command processor + 2D DMA +
-// scratchpad.  The scalar core will be attached in the next integration step.
+// M4a NPU top: AXI4-Lite CSR + command processor + 2D DMA + 5-stage core +
+// scratchpad.  Kernel code/args are DMA'd into scratchpad before RUN.
 module clover_npu_mem (
     input  logic         clk,
     input  logic         rst_n,
@@ -62,7 +63,9 @@ module clover_npu_mem (
     output logic         busy,
     output logic         irq,
     output logic [31:0]  queue_head,
-    output logic [31:0]  completion_head
+    output logic [31:0]  completion_head,
+    output logic         core_active,
+    output logic [31:0]  last_exit_code
 );
 
     logic [31:0] queue_base;
@@ -150,16 +153,58 @@ module clover_npu_mem (
     logic        dma_done;
     logic        dma_error;
 
+    logic        dma_sp_rd_req;
+    logic [17:0] dma_sp_rd_addr;
+    logic [511:0] dma_sp_rd_data;
+    logic        dma_sp_wr_req;
+    logic [17:0] dma_sp_wr_addr;
+    logic [511:0] dma_sp_wr_data;
+    logic [63:0] dma_sp_wr_be;
+    logic        dma_sp_wr_ready;
+
     logic        sp_rd_req;
     logic [17:0] sp_rd_addr;
-    logic [511:0] sp_rd_data;
     logic        sp_wr_req;
     logic [17:0] sp_wr_addr;
     logic [511:0] sp_wr_data;
     logic [63:0] sp_wr_be;
     logic        sp_wr_ready;
 
+    // Core interfaces.
+    logic        core_start;
+    logic [31:0] core_entry;
+    logic [31:0] core_sp;
+    logic [31:0] core_arg;
+    logic        core_halted;
+    logic [31:0] core_exit_code;
+    logic        c_core_active;
+
+    logic        c_imem_req;
+    logic [31:0] c_imem_addr;
+    logic        c_imem_ready;
+    logic [31:0] c_imem_rdata;
+    logic        c_dmem_req;
+    logic        c_dmem_we;
+    logic [31:0] c_dmem_addr;
+    logic [1:0]  c_dmem_size;
+    logic [31:0] c_dmem_wdata;
+    logic        c_dmem_ready;
+    logic [31:0] c_dmem_rdata;
+
+    logic [511:0] core_a_rdata;
+    logic [511:0] core_b_rdata;
+    logic [511:0] core_w_data;
+    logic [63:0]  core_w_be;
+    logic [17:0]  core_a_addr;
+    logic [17:0]  core_b_addr;
+    logic [17:0]  core_w_addr;
+    logic [3:0]   c_imem_lane;
+    logic [3:0]   c_dmem_lane;
+    logic [1:0]   c_dmem_offset;
+    logic [3:0]   c_lane_be;
+
     assign busy = cp_busy;
+    assign core_active = core_halted ? 1'b0 : c_core_active;
 
     clover_axi_csr u_csr (
         .clk              (clk),
@@ -245,6 +290,14 @@ module clover_npu_mem (
         .m_bvalid         (cp_bvalid),
         .m_bready         (cp_bready),
         .cp_axi_active    (cp_axi_active),
+        .core_start       (core_start),
+        .core_entry       (core_entry),
+        .core_sp          (core_sp),
+        .core_arg         (core_arg),
+        .core_active      (c_core_active),
+        .core_halted      (core_halted),
+        .core_exit_code   (core_exit_code),
+        .last_exit_code   (last_exit_code),
         .dma_start        (dma_start),
         .dma_dir          (dma_dir),
         .dma_src          (dma_src),
@@ -299,13 +352,13 @@ module clover_npu_mem (
         .m_bresp      (dma_bresp),
         .m_bvalid     (dma_bvalid),
         .m_bready     (dma_bready),
-        .sp_rd_req    (sp_rd_req),
-        .sp_rd_addr   (sp_rd_addr),
-        .sp_rd_data   (sp_rd_data),
-        .sp_wr_req    (sp_wr_req),
-        .sp_wr_addr   (sp_wr_addr),
-        .sp_wr_data   (sp_wr_data),
-        .sp_wr_be     (sp_wr_be),
+        .sp_rd_req    (dma_sp_rd_req),
+        .sp_rd_addr   (dma_sp_rd_addr),
+        .sp_rd_data   (dma_sp_rd_data),
+        .sp_wr_req    (dma_sp_wr_req),
+        .sp_wr_addr   (dma_sp_wr_addr),
+        .sp_wr_data   (dma_sp_wr_data),
+        .sp_wr_be     (dma_sp_wr_be),
         .sp_wr_ready  (sp_wr_ready)
     );
 
@@ -348,14 +401,82 @@ module clover_npu_mem (
     assign dma_bresp = m_bresp;
     assign dma_bvalid = m_bvalid && !cp_axi_active;
 
+    // Core.
+    assign c_imem_lane = c_imem_addr[5:2];
+    assign core_a_addr = {c_imem_addr[17:6], 6'b0};
+    assign c_imem_rdata = core_a_rdata[32*c_imem_lane +: 32];
+    assign c_imem_ready = 1'b1;
+
+    assign c_dmem_lane   = c_dmem_addr[5:2];
+    assign c_dmem_offset = c_dmem_addr[1:0];
+    assign c_dmem_rdata  = core_b_rdata[32*c_dmem_lane +: 32];
+    assign c_dmem_ready  = 1'b1;
+    assign core_b_addr   = {c_dmem_addr[17:6], 6'b0};
+    assign core_w_addr   = {c_dmem_addr[17:6], 6'b0};
+
+    always_comb begin
+        unique case (c_dmem_size)
+            2'd0: c_lane_be = 4'b0001 << c_dmem_offset;
+            2'd1: c_lane_be = 4'b0011 << c_dmem_offset;
+            default: c_lane_be = 4'b1111;
+        endcase
+    end
+
+    always_comb begin
+        core_w_data = 512'd0;
+        core_w_data[32*c_dmem_lane +: 32] = c_dmem_wdata << (8*c_dmem_offset);
+    end
+    assign core_w_be = {60'd0, c_lane_be} << (4*c_dmem_lane);
+
+    clover_core #(
+        .RESET_PC(32'd0)
+    ) u_core (
+        .clk        (clk),
+        .rst_n      (rst_n),
+        .core_start (core_start),
+        .core_entry (core_entry),
+        .core_sp    (core_sp),
+        .core_arg   (core_arg),
+        .core_active(c_core_active),
+        .imem_req   (c_imem_req),
+        .imem_addr  (c_imem_addr),
+        .imem_ready (c_imem_ready),
+        .imem_rdata (c_imem_rdata),
+        .dmem_req   (c_dmem_req),
+        .dmem_we    (c_dmem_we),
+        .dmem_addr  (c_dmem_addr),
+        .dmem_size  (c_dmem_size),
+        .dmem_wdata (c_dmem_wdata),
+        .dmem_ready (c_dmem_ready),
+        .dmem_rdata (c_dmem_rdata),
+        .halted     (core_halted),
+        .exit_code  (core_exit_code),
+        .uart_data  (),
+        .uart_valid (),
+        .pc_out     (),
+        .cycle_count(),
+        .halt_reason()
+    );
+
+    // Scratchpad port mux: core owns the ports while active; DMA otherwise.
+    assign sp_wr_req  = c_core_active ? (c_dmem_req && c_dmem_we) : dma_sp_wr_req;
+    assign sp_wr_addr = c_core_active ? core_w_addr : dma_sp_wr_addr;
+    assign sp_wr_data = c_core_active ? core_w_data : dma_sp_wr_data;
+    assign sp_wr_be   = c_core_active ? core_w_be : dma_sp_wr_be;
+    assign dma_sp_wr_ready = c_core_active ? 1'b0 : sp_wr_ready;
+
+    assign sp_rd_req  = c_core_active ? (c_dmem_req && !c_dmem_we) : dma_sp_rd_req;
+    assign sp_rd_addr = c_core_active ? core_b_addr : dma_sp_rd_addr;
+    assign dma_sp_rd_data = core_b_rdata;
+
     clover_scratchpad u_sp (
         .clk     (clk),
-        .a_req   (1'b0),
-        .a_addr  (18'd0),
-        .a_rdata (),
+        .a_req   (c_imem_req),
+        .a_addr  (core_a_addr),
+        .a_rdata (core_a_rdata),
         .b_req   (sp_rd_req),
         .b_addr  (sp_rd_addr),
-        .b_rdata (sp_rd_data),
+        .b_rdata (core_b_rdata),
         .w_req   (sp_wr_req),
         .w_addr  (sp_wr_addr),
         .w_data  (sp_wr_data),

@@ -56,6 +56,16 @@ module clover_cmd_proc (
 
     output logic         cp_axi_active,
 
+    // Core control/status.
+    output logic         core_start,
+    output logic [31:0]  core_entry,
+    output logic [31:0]  core_sp,
+    output logic [31:0]  core_arg,
+    input  logic         core_active,
+    input  logic         core_halted,
+    input  logic [31:0]  core_exit_code,
+    output logic [31:0]  last_exit_code,
+
     // DMA control.
     output logic         dma_start,
     output logic [1:0]   dma_dir,
@@ -80,6 +90,8 @@ module clover_cmd_proc (
         ST_CMP_AW,
         ST_CMP_W,
         ST_CMP_B,
+        ST_CORE_START,
+        ST_CORE_WAIT,
         ST_NEXT
     } state_t;
 
@@ -105,6 +117,11 @@ module clover_cmd_proc (
     logic [31:0] dma_dst_stride_q;
     logic [1:0]  dma_dir_q;
 
+    logic [31:0] core_entry_q;
+    logic [31:0] core_sp_q;
+    logic [31:0] core_arg_q;
+    logic [31:0] last_exit_code_q;
+
     logic irq_q;
 
     assign queue_head = queue_head_q;
@@ -117,6 +134,12 @@ module clover_cmd_proc (
     assign cp_axi_active = (state == ST_AR) || (state == ST_R) ||
                            (state == ST_CMP_AW) || (state == ST_CMP_W) ||
                            (state == ST_CMP_B);
+
+    assign core_start  = (state == ST_CORE_START);
+    assign core_entry  = core_entry_q;
+    assign core_sp     = core_sp_q;
+    assign core_arg    = core_arg_q;
+    assign last_exit_code = last_exit_code_q;
 
     assign dma_start = (state == ST_DMA_START);
     assign dma_dir = dma_dir_q;
@@ -200,6 +223,10 @@ module clover_cmd_proc (
             dma_src_stride_q  <= 32'd0;
             dma_dst_stride_q  <= 32'd0;
             dma_dir_q         <= 2'd0;
+            core_entry_q      <= 32'd0;
+            core_sp_q         <= 32'd0;
+            core_arg_q        <= 32'd0;
+            last_exit_code_q  <= 32'd0;
             irq_q             <= 1'b0;
         end else begin
             irq_q <= 1'b0;
@@ -246,6 +273,12 @@ module clover_cmd_proc (
                                 dma_dir_q        <= cmd_flags[1:0];
                                 state            <= ST_DMA_START;
                             end
+                            32'h03: begin             // RUN
+                                core_entry_q <= cmd_src;
+                                core_sp_q    <= cmd_dim0;
+                                core_arg_q   <= cmd_dst;
+                                state        <= ST_CORE_START;
+                            end
                             32'h05, 32'h08: state <= ST_CMP_AW; // SIGNAL / END
                             default: begin
                                 status_q     <= 32'd1;
@@ -281,6 +314,21 @@ module clover_cmd_proc (
                             completion_head_q <= ring_next(completion_head_q, completion_size);
                             irq_q <= 1'b1;
                             state <= ST_NEXT;
+                        end
+                    end
+                    ST_CORE_START: begin
+                        if (core_active) state <= ST_CORE_WAIT;
+                    end
+                    ST_CORE_WAIT: begin
+                        if (core_halted) begin
+                            last_exit_code_q <= core_exit_code;
+                            if (core_exit_code != 32'd0) begin
+                                status_q     <= 32'd1;
+                                error_code_q <= 4'd5;
+                                state        <= ST_CMP_AW;
+                            end else begin
+                                state <= ST_NEXT;
+                            end
                         end
                     end
                     ST_NEXT: begin

@@ -177,10 +177,10 @@ sequenceDiagram
 - `PC = entry`（DRAM 地址，通常 `0x1000_0000 + text_off`）
 - `sp = stack_top`（scratchpad 高地址，16 B 对齐）
 - `a0 = args_addr`（scratchpad 中的 `clover_kernel_args`）
-- `ra = exit_trampoline`（设备内固定地址，执行 `ECALL(0)`）
+- `ra = 0`（kernel-return sentinel）
 - `gp = gp_base`（可选，v0.1 设为 0）
 
-kernel 以 `ret` 返回 trampoline，trampoline 执行 `ECALL`，`a0 = 0` 表示正常退出。非零 `a0` 表示 kernel 错误码，CP 记录到 completion entry。
+kernel 以 `ret` 返回；`jalr zero, ra, 0` 且 `ra=0` 时核心停止，`a0` 作为状态码返回给 CP。CP 只在非零状态时写错误 completion。独立程序仍可用 `_start` → `main` → `ecall(exit)` 路径。
 
 ## 5. Clover-S 标量核
 

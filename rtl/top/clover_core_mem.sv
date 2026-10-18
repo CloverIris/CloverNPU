@@ -48,11 +48,30 @@ module clover_core_mem (
     logic [63:0] w_be;
     logic        w_ready;
 
+    logic        core_start;
+    logic [3:0]  boot_count;
+    logic        core_active;
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            boot_count <= 4'd0;
+        end else if (boot_count < 4'd4) begin
+            boot_count <= boot_count + 4'd1;
+        end
+    end
+
+    assign core_start = rst_n && (boot_count == 4'd0);
+
     clover_core #(
         .RESET_PC(32'd0)
     ) u_core (
         .clk        (clk),
         .rst_n      (rst_n),
+        .core_start (core_start),
+        .core_entry (32'd0),
+        .core_sp    (32'h0003_FFF0),
+        .core_arg   (32'd0),
+        .core_active(core_active),
         .imem_req   (imem_req),
         .imem_addr  (imem_addr),
         .imem_ready (imem_ready),

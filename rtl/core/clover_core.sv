@@ -10,6 +10,13 @@ module clover_core
     input  logic        clk,
     input  logic        rst_n,
 
+    // Kernel boot interface.
+    input  logic        core_start,
+    input  logic [31:0] core_entry,
+    input  logic [31:0] core_sp,
+    input  logic [31:0] core_arg,
+    output logic        core_active,
+
     // Instruction memory (valid/ready, combinational read).
     output logic        imem_req,
     output logic [31:0] imem_addr,
@@ -38,6 +45,7 @@ module clover_core
     // ---------------------------------------------------------------- state
     logic [31:0] pc;
     logic        halted_q;
+    logic        core_active_q;
     logic [31:0] exit_code_q;
     logic [7:0]  uart_data_q;
     logic        uart_valid_q;
@@ -80,7 +88,7 @@ module clover_core
     logic [4:0]  mem_wb_rd;
 
     // ------------------------------------------------------------ IF / ID
-    assign imem_req  = !halted_q;
+    assign imem_req  = !halted_q && core_active_q;
     assign imem_addr = pc;
 
     ctrl_t id_ctrl;
@@ -106,16 +114,21 @@ module clover_core
     logic [4:0]  wb_rd;
     logic [31:0] wb_data;
 
+    logic [31:0] dbg_a0;
     clover_regfile u_regfile (
-        .clk    (clk),
-        .rst_n  (rst_n),
-        .rs1    (id_rs1_addr),
-        .rs2    (id_rs2_addr),
-        .rd     (wb_rd),
-        .we     (wb_we),
-        .wdata  (wb_data),
-        .rdata1 (id_rs1_data),
-        .rdata2 (id_rs2_data)
+        .clk      (clk),
+        .rst_n    (rst_n),
+        .rs1      (id_rs1_addr),
+        .rs2      (id_rs2_addr),
+        .rd       (wb_rd),
+        .we       (wb_we),
+        .wdata    (wb_data),
+        .boot     (core_start),
+        .boot_sp  (core_sp),
+        .boot_arg (core_arg),
+        .rdata1   (id_rs1_data),
+        .rdata2   (id_rs2_data),
+        .dbg_a0   (dbg_a0)
     );
 
     // ------------------------------------------------------------- hazards
@@ -268,7 +281,8 @@ module clover_core
 
     // ----------------------------------------------------------- MEM stage
     assign dmem_req   = ex_mem_valid && (ex_mem_ctrl.mem_read ||
-                                         ex_mem_ctrl.mem_write) && !halted_q;
+                                         ex_mem_ctrl.mem_write) && !halted_q &&
+                        core_active_q;
     assign dmem_we    = ex_mem_ctrl.mem_write;
     assign dmem_addr  = ex_mem_result;
     assign dmem_size  = ex_mem_ctrl.mem_size;
@@ -320,8 +334,14 @@ module clover_core
     assign ecall_error = id_ex_valid && id_ex_ctrl.ecall &&
                          (fwd_rs1 != 32'd0) && (fwd_rs1 != 32'd1);
 
+    // Kernel return convention: CP boots with ra=0; the final `ret` is
+    // jalr zero, ra, 0 and targets address 0.
+    logic kernel_return;
+    assign kernel_return = id_ex_valid && id_ex_ctrl.jump_reg &&
+                           ((alu_y & ~32'd1) == 32'd0);
+
     assign halt_event = !halted_q &&
-                        (mem_misaligned ||
+                        (mem_misaligned || kernel_return ||
                          (id_ex_valid && (id_ex_ctrl.illegal || id_ex_ctrl.ebreak)) ||
                          ecall_exit || ecall_error);
 
@@ -361,6 +381,7 @@ module clover_core
             mem_wb_pc     <= 32'd0;
             mem_wb_rd     <= 5'd0;
             halted_q      <= 1'b0;
+            core_active_q <= 1'b0;
             exit_code_q   <= 32'd0;
             uart_data_q   <= 8'd0;
             uart_valid_q  <= 1'b0;
@@ -379,17 +400,30 @@ module clover_core
                 cycle_count_q <= cycle_count_q + 32'd1;
             end
 
-            if (halted_q) begin
+            if (core_start) begin
+                pc            <= core_entry;
+                core_active_q <= 1'b1;
+                halted_q      <= 1'b0;
+                exit_code_q   <= 32'd0;
+                halt_reason_q <= 4'd0;
+                if_id_valid   <= 1'b0;
+                id_ex_valid   <= 1'b0;
+                ex_mem_valid  <= 1'b0;
+                mem_wb_valid  <= 1'b0;
+            end else if (halted_q) begin
                 // Frozen.
             end else if (halt_event) begin
-                halted_q    <= 1'b1;
-                exit_code_q <= ecall_exit ? {24'd0, fwd_rs2[7:0]}
-                                          : (ecall_error ? 32'd1 : 32'd0);
+                halted_q      <= 1'b1;
+                core_active_q <= 1'b0;
+                exit_code_q   <= kernel_return ? dbg_a0 :
+                                (ecall_exit ? {24'd0, fwd_rs2[7:0]}
+                                            : (ecall_error ? 32'd1 : 32'd0));
                 halt_reason_q <= mem_misaligned ? 4'd5 :
+                                 (kernel_return ? 4'd6 :
                                  (id_ex_ctrl.illegal ? 4'd1 :
                                  (id_ex_ctrl.ebreak ? 4'd2 :
                                  (ecall_exit ? 4'd3 :
-                                 (ecall_error ? 4'd4 : 4'd0))));
+                                 (ecall_error ? 4'd4 : 4'd0)))));
                 if_id_valid <= 1'b0;
                 id_ex_valid <= 1'b0;
                 ex_mem_valid<= 1'b0;
@@ -506,5 +540,6 @@ module clover_core
     assign pc_out      = pc;
     assign cycle_count = cycle_count_q;
     assign halt_reason = halt_reason_q;
+    assign core_active = core_active_q;
 
 endmodule

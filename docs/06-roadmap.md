@@ -80,7 +80,18 @@
 - 错误对齐被拒绝并上报：通过。
 - AXI 随机 backpressure 与 ring 回绕 1000 条：尚未覆盖。
 
-## M4 · Tile engine
+## M4 · Core 集成 + Tile engine
+
+### M4a · Core 集成 + RUN（已完成，2026-10-18）
+
+- 5 级核 boot：`core_start/entry/sp/arg`，regfile 写 `sp/a0/ra=0`。
+- kernel 返回 sentinel：`ret` 到地址 0 → 核停机，`a0` 为状态。
+- CP `RUN` 命令：entry/args/stack；等待 `core_halted`；错误写 completion。
+- `clover_npu_mem` 接入核；core active 时独占 scratchpad 端口，否则 DMA。
+- host → DMA kernel image → RUN → kernel 写结果 → DMA result → SIGNAL/END 通过。
+- 详见 [M4a 状态](09-m4a-core-integration.md)。
+
+### M4b · Tile engine（下一步）
 
 目标：**描述符驱动的 MMA/VEC/CVT/REDUCE 在 RTL 上正确。**
 
