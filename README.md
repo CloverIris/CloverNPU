@@ -1,32 +1,75 @@
 # CloverNPU
 
-CloverNPU 是一个**面向研究与验证**的传统体制可编程 NPU。它不采用 GPGPU 的宽 SIMT/warp 模型，也不把卷积、ReLU 等算子做成硬连线宏；计算由标量控制核执行 C kernel，通过紧耦合的 tile 指令驱动可编程向量/矩阵引擎，配合 DMA、scratchpad 与显式片上缓存完成。
+**面向研究与验证的可编程 NPU 原型**
 
-> 当前状态：**M4g + M4h-partial + M6a 完成**。RTL MMA/VEC 支持 FP4–FP16 输入；MMA 支持 per-tensor/per-channel scale 与 post_scale，VEC 支持 per-tensor scale。GEMM 16×16×16/17×19×23 与 `GEMM → VEC ADD` 图都通过。主机图 runtime 仍走 ISS；低精度 C、RTL 图后端与 CLOV 是下一段。
+[![GitHub repository](https://img.shields.io/badge/GitHub-CloverIris%2FCloverNPU-181717?logo=github)](https://github.com/CloverIris/CloverNPU)
 
-## 设计目标
+CloverNPU 是一个以 tile 运算为核心的 NPU 软硬件协同项目。标量控制核运行 kernel，通过指令驱动可编程矩阵与向量引擎，并由命令队列、DMA 和片上 scratchpad 协同完成任务。项目提供 SystemVerilog RTL、指令集模拟器、编译工具链、主机 runtime 与端到端验证环境。
 
-- **传统 tile-based NPU**：主机 graph runtime 组图，NPU 命令队列执行；设备内是“标量控制核 + 可编程 tile 引擎 + DMA + scratchpad”。
-- **非固化算子**：没有 conv/relu/softmax 专用硬件；kernel 用 Clover C 编写，由 MMA/VEC/DMA/WAIT 等原语组合出算子。
-- **动态 shape 与图**：所有 tile 操作的 M/N/K/N 与 stride 在运行时由描述符给出，RTL 不按固定 shape 特化。
-- **标准浮点存储格式**：FP16、BF16、FP8(E4M3/E5M2)、FP4(E2M1)，统一解包到 FP32 计算、FP32 累加，输出按目标格式 RNE 转换。
-- **片上存储**：256 KB 多 bank scratchpad、32 KB I-cache、16 KB D-cache，DMA 与 cache 的维护责任明确。
-- **模块化、可综合**：SystemVerilog RTL，Verilator 仿真、Yosys 可综合性检查；接口、描述符、ABI 全部文档化。
+项目重点是探索清晰、可验证的 NPU 架构与软硬件接口；目前仍处于研究原型阶段，不代表已完成产品化或流片验证。
 
-## 关键规格（v0.1）
+## 当前进展
+
+| 子系统 | 状态 | 已验证内容 |
+|---|---|---|
+| 标量 ISA、汇编器、ISS 与 C 编译器 | 可用 | 整数 C 程序的编译与 ISS 执行 |
+| Clover-S RTL 核、scratchpad、DMA 与命令处理器 | 可用 | 仿真、差分测试及 Yosys 可综合性检查 |
+| Tile MMA / VEC RTL | 持续开发 | FP4–FP16 输入路径；MMA per-tensor / per-channel scale；VEC per-tensor scale |
+| RTL GEMM 与两节点图 | 可用 | GEMM shape `16×16×16`、`17×19×23`；`GEMM → VEC ADD` |
+| 主机 graph runtime | ISS 仿真后端可用 | 动态 shape 的 GEMM → VEC ADD |
+
+低精度输出、通用 RTL 图 runtime、CLOV 打包与更完整的编译器支持仍在开发中。各模块的细节及限制见[路线图](docs/06-roadmap.md)和对应状态文档。
+
+## 架构与规格
 
 | 项目 | 规格 |
 |---|---|
-| 标量核 | 自研 Clover-S，32 位定长指令，ILP32，5 级顺序流水（RTL + ISS） |
+| 标量核 | Clover-S，32 位定长指令，ILP32，5 级顺序流水（RTL + ISS） |
 | 矩阵引擎 | 16 x 16 MAC，单条 MMA 处理 M,N,K <= 16 的 block |
 | 向量引擎 | 16 lane，流式描述符驱动，N 由运行时给出 |
 | 数值 | FP16/BF16/FP8-E4M3/FP8-E5M2/FP4-E2M1 存储；FP32 计算/累加 |
-| 片上存储 | 256 KB scratchpad（16 bank，2R1W 64B，已实现）；I/D-cache 待接入 |
+| 片上存储 | 256 KB scratchpad（16 bank，2R1W 64 B）；I/D-cache 尚未接入 |
 | 外部接口 | AXI4 master（128-bit data）/ AXI4-Lite slave（32-bit） |
 | 命令接口 | 64 B 命令、DRAM 环形队列、doorbell + completion ring + IRQ |
-| 主机 runtime | C API + JSON Graph IR，执行时解析动态 shape |
-| 编译器 | C++17 自研 `cloverc`，当前 C 子集输出 flat image；ELF32/CLOV 在 M5 接入 |
+| 主机 runtime | C API 与显式张量图；当前由 ISS 仿真后端执行，尚无 JSON / CLOV 图解析 |
+| 编译器 | C++17 `cloverc`，当前 C 子集输出 flat image；ELF32/CLOV 尚未接入 |
 | 仿真 | Verilator 5.x + cocotb/pytest + C++ ISS + Python golden |
+
+## 快速开始
+
+### 获取代码
+
+```bash
+git clone https://github.com/CloverIris/CloverNPU.git
+cd CloverNPU
+```
+
+### 安装与检查工具
+
+环境准备脚本会创建项目 Python 虚拟环境、安装 `requirements.txt` 中的依赖，并检查所需工具。缺少 Verilator、Icarus Verilog 或 Yosys 时，macOS 环境下脚本会尝试通过 Homebrew 安装。
+
+```bash
+./scripts/setup.sh
+```
+
+主要依赖包括 C++17 编译器、CMake 3.20 或更高版本、Ninja、Python 3、Verilator、Icarus Verilog、Yosys，以及 Python requirements。
+
+### 构建与运行验证
+
+```bash
+make tools             # 构建 cloverc、汇编器、ISS 与反汇编器
+make m2-test           # 运行汇编器 / ISS / 编译器回归
+make rtl-gemm-test     # 运行 RTL GEMM 端到端测试
+make rtl-graph-test    # 运行 RTL GEMM → VEC ADD 测试
+```
+
+运行完整验证集合：
+
+```bash
+make check
+```
+
+`make check` 会执行工具检查、ABI、仿真、RTL lint / 综合检查及相关回归，耗时和依赖多于上述单项测试。所有命令均从仓库根目录执行。
 
 ## 仓库结构
 
@@ -40,44 +83,12 @@ compiler/   cloverc 编译器前端/后端/驱动
 runtime/    主机侧 libclover、graph runtime（M6）
 kernels/    用 Clover C 写的 GEMM/conv/elementwise 等 kernel
 examples/   端到端示例与图定义
-tools/      clover-as / clover-objdump
+tools/      clover-as / clover-objdump / clover-pack
 scripts/    环境安装、工具检查、综合检查
 tests/      ABI、M2 垂直切片与后续回归
 ```
 
-## 工具链
-
-已在 macOS 15.7 / Apple M3 上验证：
-
-| 工具 | 版本 |
-|---|---|
-| Verilator | 5.052 |
-| Icarus Verilog | 13.0 |
-| Yosys | 0.69 |
-| cocotb | 2.1.0（项目 `.venv`） |
-| CMake / Ninja | 4.1 / 1.x |
-| Apple clang | 17.0 |
-
-```bash
-./scripts/setup.sh          # 创建 .venv、安装 Python 依赖、检查工具
-./scripts/check_tools.sh    # 打印版本并检查最低版本
-make smoke                  # 工具链最小闭环：Verilator + Icarus + cocotb + Yosys
-make tools                  # 构建 cloverc / clover-as / clover-iss / clover-objdump
-make m2-test                # 23 个汇编/C 程序的 ISS 端到端回归
-make rtl-core-test          # 19 个 C 程序在 5 级 RTL 核上复现
-make rtl-mem-test           # scratchpad + AXI-CSR + DMA + CP + NPU end-to-end
-make rtl-npu-test           # host -> RUN C kernel -> DMA result -> completion
-make tile-gemm-test         # dynamic-shape GEMM on the ISS tile engine
-make runtime-graph-test     # GEMM -> VEC ADD graph via libclover sim
-make rtl-tile-test          # FP32 add/mul + 16x16x16 MMA RTL
-make rtl-gemm-test          # full RTL GEMM via CP/DMA/core/tile MMA
-make rtl-graph-test         # RTL GEMM -> VEC ADD two-node graph
-make rtl-mem-synth          # Yosys check of the M3/M4a blocks
-```
-
-RTL GEMM 回归覆盖 `16x16x16` 与 `17x19x23`；MMA/VEC 输入格式覆盖 FP4/E4M3/E5M2/FP16/BF16；MMA 支持 per-tensor/per-channel scale，C 输出仍为 FP32。
-
-## 设计文档
+## 文档
 
 - [决策记录](docs/00-decisions.md)
 - [总体架构](docs/01-architecture.md)
@@ -85,7 +96,7 @@ RTL GEMM 回归覆盖 `16x16x16` 与 `17x19x23`；MMA/VEC 输入格式覆盖 FP4
 - [Clover ABI](docs/03-abi.md)
 - [Clover C 编译器](docs/04-compiler.md)
 - [验证与工具链](docs/05-verification.md)
-- [路线图](docs/06-roadmap.md)
+- [路线图与未完成事项](docs/06-roadmap.md)
 - [M2 状态（软件切片 + RTL 核）](docs/07-m2-status.md)
 - [M3 状态（scratchpad + AXI + DMA + 命令队列）](docs/08-m3-status.md)
 - [M4a 状态（core 集成 + RUN）](docs/09-m4a-core-integration.md)
@@ -95,7 +106,7 @@ RTL GEMM 回归覆盖 `16x16x16` 与 `17x19x23`；MMA/VEC 输入格式覆盖 FP4
 - [RTL GEMM 端到端](docs/13-rtl-gemm.md)
 - [RTL 两节点图（GEMM → VEC ADD）](docs/14-rtl-graph.md)
 
-## 现在就能跑的 C
+## 示例：运行 C 程序
 
 ```c
 int fib(int n)
@@ -116,7 +127,9 @@ build/cmake/bin/cloverc fib.c -o fib.bin --asm fib.s
 build/cmake/bin/clover-iss --image fib.bin --dump-regs
 ```
 
-## 目标 kernel 的形态（M4/M5）
+该示例返回值为 `55`，可通过 ISS 的寄存器输出确认。
+
+## Tile kernel 接口示意
 
 ```c
 #include <clover/clover_tile.h>
@@ -129,48 +142,17 @@ void gemm_block(const clover_mma_desc *d)
 }
 ```
 
-> 当前编译器还没有预处理器与 struct 支持，这段 kernel 是 M4/M5 的目标形态；M2 先用无头文件的整数 C 打通执行链路。
+以上代码展示目标 kernel 接口形态。当前编译器尚不支持预处理器与 `struct`；已支持的 C 子集及当前限制请以[编译器文档](docs/04-compiler.md)为准。
 
-真正的 GEMM 由 C 循环遍历 M/N/K block，并在 K 方向设置 `accumulate`，不是硬件固化算子。
+GEMM 通过 kernel 中的循环遍历 M/N/K 分块，并组合 MMA、VEC、DMA、WAIT 等指令完成；硬件不固化为专用 GEMM 算子。
 
-## M3 的存储/总线/命令子系统
+## 范围与限制
 
-- `rtl/mem/clover_scratchpad.sv`：256 KB，16 bank × 16 KB，2 个 64 B 读端口 + 1 个 64 B 写端口，byte enable。
-- `rtl/bus/clover_axi4lite_slave.sv`：32-bit AXI4-Lite slave，独立 AW/W 通道、B/R 响应。
-- `rtl/top/clover_csr.sv`：全局 CSR（ID/VERSION/STATUS/CONTROL/IRQ/QUEUE/COMPLETE/CYCLE/SCRATCH/CAP）。
-- `rtl/dma/clover_dma.sv`：2D DMA，DRAM ↔ scratchpad，16 B 单拍 AXI。
-- `rtl/cmd/clover_cmd_proc.sv`：64 B 命令 ring、doorbell、DMA、completion、IRQ。
-- `rtl/top/clover_axi_csr.sv`：AXI4-Lite + CSR 集成。
-- `rtl/top/clover_npu_mem.sv`：AXI4-Lite + CP + DMA + 5 级核 + scratchpad + AXI4 master。
-- `rtl/top/clover_core_mem.sv`：5 级核 + scratchpad 取指/读写适配器。
-- `RUN`：`src=entry`、`dst=args`、`dim0=stack_top`；boot 时 `ra=0`，`ret` 到 0 即 kernel 返回。
-- `kernels/gemm.c`：动态 M/N/K 的 16×16×16 block GEMM；ISS 功能级 tile engine 通过。
-- `kernels/add.c` + `runtime/src/clover_sim.cpp`：`GEMM → VEC ADD` 两节点图。
-- `rtl/fp/clover_fp_pkg.sv` + `rtl/tile/clover_tile_mma.sv`：可综合 FP32 add/mul 与串行 MMA。
-- `rtl/tile/clover_tile_vec.sv`：FP32 VEC ADD/MUL/RELU。
-- `rtl/tile/clover_tile_mma.sv`：FP4–FP16 MMA 格式。
-- `rtl/top/clover_npu_mem.sv`：tile MMA/VEC 接入 core/CP/DMA；RTL GEMM 与 GEMM→ADD 图通过。
-
-## M2b 的 RTL 核
-
-- `rtl/common/clover_pkg.sv`：参数、opcode/ALU/branch/dtype 枚举、CSR 地址、`ctrl_t`。
-- `rtl/core/clover_alu.sv`：整数 ALU + 乘除。
-- `rtl/core/clover_regfile.sv`：32 x 32 寄存器堆，x0 恒 0。
-- `rtl/core/clover_decoder.sv`：完整标量指令 + TILE 指令译码。
-- `rtl/core/clover_core.sv`：5 级流水、EX/MEM/WB 转发、load-use/WB-ID hazard、CSR、trap、ecall/uart。
-- `sim/rtl/clover_core_tb.sv`：仿真内存模型（DRAM + scratchpad）。
-- `tests/rtl/run_core_tests.py`：19 个 C 程序的 ISS/RTL 差分。
-
-当前 RTL 核**尚未接入** I-cache/D-cache、AXI、DMA、命令队列与 tile engine；这些是 M3/M4。
-
-## 非目标（v0.1）
-
-- 不做 GPGPU 式线程/ warp / 大寄存器堆。
-- 不做操作系统、MMU、虚拟内存、多租户。
-- 不做训练反向传播、自动微分。
-- 不做 PCIe/CXL 物理层；主机接口在仿真中由 AXI 事务模型承担。
-- 不承诺时序收敛/流片；Yosys 只做可综合性检查。
+- 项目面向架构研究和功能验证，不承诺时序收敛、芯片流片或生产级性能。
+- 当前主机图 runtime 运行于 ISS 仿真后端；RTL 图测试覆盖固定的两节点命令序列，不是通用图执行后端。
+- 暂不提供操作系统、MMU、虚拟内存、多租户、PCIe/CXL 物理层或训练反向传播支持。
+- 具体已知限制随模块状态维护，详见[路线图](docs/06-roadmap.md)及各子系统文档。
 
 ## 许可
 
-TBD（在进入对外发布前由项目所有者确定）。
+尚未指定。项目正式对外发布前，请由项目所有者确定并添加许可证。
