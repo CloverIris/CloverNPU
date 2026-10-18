@@ -46,7 +46,7 @@ PASS tile_mma
 
 ## 4. 已知限制
 
-- MMA 已支持 FP4–FP16；VEC 只有 FP32（见 [RTL 图](14-rtl-graph.md)）。
+- MMA 与 VEC 输入都已支持 FP4–FP16；两者的 C 输出仍固定 FP32。
 - FP4/FP8 已支持 A/B 解包；C 仍是 FP32，低精度 C 输出未实现。
 - 次正规输入/输出与结果 flush 到 0；尚未做完整 IEEE 次正规舍入。
 - 单 MAC/cycle，16×16×16 约 4100 cycles；没有 16×16 阵列。

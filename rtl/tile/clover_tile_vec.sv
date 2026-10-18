@@ -48,6 +48,9 @@ module clover_tile_vec (
     logic [3:0]  error_code_q;
     logic [31:0] a_element_addr, b_element_addr, c_element_addr;
     logic [3:0]  a_lane, b_lane, c_lane;
+    logic [1:0]  a_byte_off, b_byte_off;
+    logic [2:0]  a_size, b_size;
+    logic [31:0] a_raw, b_raw;
     logic [31:0] a_f32, b_f32, result;
 
     assign busy = busy_q;
@@ -62,8 +65,36 @@ module clover_tile_vec (
         a_lane = a_element_addr[5:2];
         b_lane = b_element_addr[5:2];
         c_lane = c_element_addr[5:2];
-        a_f32 = a_rdata[32 * a_lane +: 32];
-        b_f32 = b_rdata[32 * b_lane +: 32];
+        a_byte_off = a_element_addr[1:0];
+        b_byte_off = b_element_addr[1:0];
+        a_raw = (a_size == 3'd4) ? a_rdata[32 * a_lane +: 32] :
+                (a_size == 3'd2) ? (a_byte_off[1] ?
+                    a_rdata[32 * a_lane + 16 +: 16] :
+                    a_rdata[32 * a_lane +: 16]) :
+                    {24'd0, a_rdata[8 * (4 * a_lane + a_byte_off) +: 8]};
+        b_raw = (b_size == 3'd4) ? b_rdata[32 * b_lane +: 32] :
+                (b_size == 3'd2) ? (b_byte_off[1] ?
+                    b_rdata[32 * b_lane + 16 +: 16] :
+                    b_rdata[32 * b_lane +: 16]) :
+                    {24'd0, b_rdata[8 * (4 * b_lane + b_byte_off) +: 8]};
+        case (src_type)
+        3'd0: a_f32 = a_raw;
+        3'd1: a_f32 = clover_fp16_to_fp32(a_raw[15:0]);
+        3'd2: a_f32 = clover_bf16_to_fp32(a_raw[15:0]);
+        3'd3: a_f32 = clover_fp8_e4m3_to_fp32(a_raw[7:0]);
+        3'd4: a_f32 = clover_fp8_e5m2_to_fp32(a_raw[7:0]);
+        3'd5: a_f32 = clover_fp4_to_fp32(a_raw[3:0]);
+        default: a_f32 = 32'd0;
+        endcase
+        case (src_type)
+        3'd0: b_f32 = b_raw;
+        3'd1: b_f32 = clover_fp16_to_fp32(b_raw[15:0]);
+        3'd2: b_f32 = clover_bf16_to_fp32(b_raw[15:0]);
+        3'd3: b_f32 = clover_fp8_e4m3_to_fp32(b_raw[7:0]);
+        3'd4: b_f32 = clover_fp8_e5m2_to_fp32(b_raw[7:0]);
+        3'd5: b_f32 = clover_fp4_to_fp32(b_raw[3:0]);
+        default: b_f32 = 32'd0;
+        endcase
 
         result = a_f32;
         case (op)
@@ -80,10 +111,11 @@ module clover_tile_vec (
         4'd6: result = {1'b0, a_f32[30:0]};
         4'd7: result = {~a_f32[31], a_f32[30:0]};
         4'd8: result = clover_fp32_add(clover_fp32_mul(a_f32, b_f32),
-                                       clover_fp32_add(a_f32, 32'd0));
+                                       d[14]);
         4'd9: result = a_f32;
         default: result = a_f32;
         endcase
+        result = clover_fp32_mul(result, d[13]);
         if (relu && result[31]) result = 32'd0;
     end
 
@@ -160,6 +192,8 @@ module clover_tile_vec (
                 c_stride   = d[8];
                 src_type   = d[9][2:0];
                 dst_type   = d[10][2:0];
+                a_size     = clover_dtype_size(src_type);
+                b_size     = a_size;
                 op         = d[1][3:0];
                 relu       = d[1][5];
                 if (d[0] != 32'h3143_4556) begin
@@ -174,7 +208,8 @@ module clover_tile_vec (
                     busy_q       <= 1'b0;
                     done_q       <= 1'b1;
                     state        <= ST_IDLE;
-                end else if (src_type != 3'd0 || dst_type != 3'd0) begin
+                end else if ((src_type > 3'd5) || (dst_type != 3'd0) ||
+                             (a_size == 0)) begin
                     error_q      <= 1'b1;
                     error_code_q <= 4'd3;
                     busy_q       <= 1'b0;

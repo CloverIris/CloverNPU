@@ -126,7 +126,12 @@
 - MMA A/B 支持 FP4/E4M3/E5M2/FP16/BF16/FP32；格式测试通过。
 - VEC 仍只有 FP32；低精度 VEC/scale 与 RTL 图后端下一步。
 
-#### M4f · VEC 低精度、scale 与 RTL 图后端（下一步）
+#### M4f · VEC 低精度与 post ops（部分完成，2026-10-18）
+
+- VEC 输入支持 FP4–FP16；post_scale 与 FMA post_bias 已实现。
+- VEC 输出仍 FP32；A/B scale 与低精度 C 输出下一步。
+
+#### M4g · scale、低精度 C 与 RTL 图后端（下一步）
 
 目标：**描述符驱动的 MMA/VEC/CVT/REDUCE 在 RTL 上正确。**
 

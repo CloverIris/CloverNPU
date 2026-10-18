@@ -15,7 +15,9 @@ RUN add   -> core tile.vec -> out = C + bias
 
 - `VEC1` 描述符 fetch/锁存/校验；
 - 1 element/cycle；
-- FP32 ADD/SUB/MUL/MAX/MIN/RELU/ABS/NEG/FMA/CVT（CVT 目前是直通）；
+- 输入 FP32/FP16/BF16/FP8-E4M3/FP8-E5M2/FP4-E2M1，输出 FP32；
+- ADD/SUB/MUL/MAX/MIN/RELU/ABS/NEG/FMA/CVT（CVT 目前是直通）；
+- `post_scale` 已应用；FMA 使用 `post_bias`；A/B scale 仍未实现。
 - count 32-bit，stride 字节；写回 FP32；
 - busy/done/error/error_code。
 
@@ -50,7 +52,7 @@ PASS npu_rtl_graph
 ## 4. 已知限制
 
 - VEC 只支持 FP32；MMA 已支持 FP4–FP16。
-- VEC 忽略 `post_scale`/`post_bias`（当前 `add.c` 用 1.0/0）。
+- VEC 已应用 `post_scale`；FMA 使用 `post_bias`；A/B per-tensor/per-channel scale 未实现。
 - 图是“两个 RUN 命令”的固定序列，不是通用 JSON/CLOV 图解析。
 - 两个 kernel 的 code 必须手工放在不同 scratchpad 地址（gemm 0，add 0x1000）。
 - 没有自动中间 buffer、形状推断或图优化；这些仍在 `libclover` ISS 后端。
@@ -59,8 +61,8 @@ PASS npu_rtl_graph
 
 ## 5. 下一步
 
-1. 多 shape RTL GEMM/图回归。
-2. VEC 的 FP16/BF16/FP8/FP4 与 post-scale/bias。
+1. VEC 低精度输出（FP16/BF16/FP8/FP4）。
+2. A/B per-tensor/per-channel scale 与 MMA post ops。
 3. 图 runtime 的 RTL/Verilator 后端（复用同一 CP 队列）。
 4. CLOV/manifest：把 entry symbol、tensor 描述、code/data 段打包。
 5. 编译器 `struct/#include/aligned(64)`，直接包含 `clover_tile.h`。
