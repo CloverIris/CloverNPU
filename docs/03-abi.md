@@ -312,6 +312,8 @@ struct clover_completion {
 - 主机写 `QUEUE_TAIL` 即 doorbell。
 - 队列满时主机等待 completion，不得覆盖未完成命令。
 - completion ring 同理；主机通过 `COMPLETE_TAIL` 归还空间。
+- 成功的 `DMA_2D` / `NOP` 不写 completion；`SIGNAL`、`END` 与任何错误写 completion。
+- 主机用 `SIGNAL(seq)` 作为软件可见的完成点；`END` 表示队列批次结束。
 - 所有地址与计数在 doorbell 前必须对设备可见（真实系统中需 host barrier；仿真后端忽略）。
 
 ## 6. Tile 描述符

@@ -14,10 +14,18 @@ module clover_csr (
 
     input  logic [63:0] cycle_count,
     input  logic        status_busy,
+    input  logic        irq_set,
+    input  logic [31:0] queue_head_in,
+    input  logic [31:0] completion_head_in,
 
     output logic [31:0] queue_base,
     output logic [31:0] queue_size,
     output logic [31:0] queue_tail,
+    output logic [31:0] completion_base,
+    output logic [31:0] completion_size,
+    output logic [31:0] completion_tail,
+    output logic        enable,
+    output logic        irq,
     output logic        doorbell,
     output logic        abort_pulse,
     output logic        soft_reset_pulse
@@ -45,6 +53,11 @@ module clover_csr (
     assign queue_base = queue_base_q;
     assign queue_size = queue_size_q;
     assign queue_tail = queue_tail_q;
+    assign completion_base = complete_base_q;
+    assign completion_size = complete_size_q;
+    assign completion_tail = complete_tail_q;
+    assign enable = control_q[0];
+    assign irq = |(irq_status_q & irq_enable_q);
     assign doorbell = doorbell_q;
     assign abort_pulse = abort_q;
     assign soft_reset_pulse = soft_reset_q;
@@ -86,11 +99,11 @@ module clover_csr (
             CSR_IRQ_ENABLE:    csr_rdata = irq_enable_q;
             CSR_QUEUE_BASE:    csr_rdata = queue_base_q;
             CSR_QUEUE_SIZE:    csr_rdata = queue_size_q;
-            CSR_QUEUE_HEAD:    csr_rdata = 32'd0;
+            CSR_QUEUE_HEAD:    csr_rdata = queue_head_in;
             CSR_QUEUE_TAIL:    csr_rdata = queue_tail_q;
             CSR_COMPLETE_BASE: csr_rdata = complete_base_q;
             CSR_COMPLETE_SIZE: csr_rdata = complete_size_q;
-            CSR_COMPLETE_HEAD: csr_rdata = 32'd0;
+            CSR_COMPLETE_HEAD: csr_rdata = completion_head_in;
             CSR_COMPLETE_TAIL: csr_rdata = complete_tail_q;
             CSR_CYCLE_LO:      csr_rdata = cycle_count[31:0];
             CSR_CYCLE_HI:      csr_rdata = cycle_count[63:32];
@@ -102,6 +115,14 @@ module clover_csr (
             CSR_CAP1:          csr_rdata = 32'd0;
             default:           csr_rdata = 32'd0;
         endcase
+    end
+
+    logic [31:0] irq_clear_mask;
+    always_comb begin
+        irq_clear_mask = 32'd0;
+        if (csr_we && (csr_waddr == CSR_IRQ_STATUS)) begin
+            irq_clear_mask = csr_wdata & strb_mask(csr_wstrb);
+        end
     end
 
     always_ff @(posedge clk or negedge rst_n) begin
@@ -125,12 +146,15 @@ module clover_csr (
             abort_q      <= 1'b0;
             soft_reset_q <= 1'b0;
 
+            irq_status_q <= (irq_status_q & ~irq_clear_mask) |
+                            {31'd0, irq_set};
+
             if (csr_we) begin
                 unique case (csr_waddr)
                     CSR_CONTROL:
                         control_q <= merge_strb(control_q, csr_wdata, csr_wstrb);
                     CSR_IRQ_STATUS:
-                        irq_status_q <= irq_status_q & ~(csr_wdata & strb_mask(csr_wstrb));
+                        ; // handled through irq_clear_mask above
                     CSR_IRQ_ENABLE:
                         irq_enable_q <= merge_strb(irq_enable_q, csr_wdata, csr_wstrb);
                     CSR_QUEUE_BASE:

@@ -64,21 +64,21 @@
 - 6 个 C 程序通过 core-from-scratchpad 测试；Yosys check 通过。
 - 详见 [M3a 状态](08-m3-status.md)。
 
-### M3b · DMA、AXI4 master、命令队列（下一步）
+### M3b · DMA、AXI4 master、命令队列（已完成，2026-10-18）
 
-- AXI4 master（128-bit，INCR burst，读写通道，backpressure）。
-- DMA 2D（DRAM ↔ scratchpad，行/stride）。
-- Command processor：ring、doorbell、completion、IRQ、error/abort。
-- Core + DMA + CP 的 `clover_npu` 顶层。
-- `libclover` 仿真后端。
-- I-cache/D-cache 可在 M3b 后段接入。
+- AXI4 master（128-bit，单拍 INCR，读/写通道）。
+- DMA 2D（DRAM ↔ scratchpad，行/stride，16 B 对齐）。
+- Command processor：ring、doorbell、DMA、completion、IRQ、abort。
+- `clover_npu_mem`：AXI4-Lite CSR + CP + DMA + scratchpad + AXI4 master。
+- Host → AXI-Lite → doorbell → command queue → DMA → completion/IRQ 全链路通过。
+- I-cache/D-cache 与 AXI protocol checker 尚未实现，延后到 M3c/M4。
 
 **验收**：
 
-- 2D DMA 在 DRAM/scratchpad 之间往返 bit-exact。
-- ring 回绕 1000 条命令无丢失。
-- completion/IRQ 正确；错误命令能被捕获并上报。
-- AXI 随机 backpressure 下无协议失败。
+- 2D DMA 在 DRAM/scratchpad 之间往返 bit-exact：通过。
+- 命令 ring 的 doorbell/completion/IRQ：通过（4 条命令、2 条 completion）。
+- 错误对齐被拒绝并上报：通过。
+- AXI 随机 backpressure 与 ring 回绕 1000 条：尚未覆盖。
 
 ## M4 · Tile engine
 

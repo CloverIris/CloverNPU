@@ -64,11 +64,20 @@ rtl-mem-lint:
 		-Irtl/common -Irtl/bus -Irtl/top rtl/top/clover_axi_csr.sv
 	verilator --lint-only -Wall -Wno-fatal --top-module clover_core_mem \
 		-Irtl/common -Irtl/core -Irtl/mem -Irtl/top rtl/top/clover_core_mem.sv
+	verilator --lint-only -Wall -Wno-fatal --top-module clover_dma \
+		-Irtl/common rtl/dma/clover_dma.sv
+	verilator --lint-only -Wall -Wno-fatal --top-module clover_cmd_proc \
+		-Irtl/common rtl/cmd/clover_cmd_proc.sv
+	verilator --lint-only -Wall -Wno-fatal --top-module clover_npu_mem \
+		-Irtl/common -Irtl/top -Irtl/bus -Irtl/cmd -Irtl/dma -Irtl/mem rtl/top/clover_npu_mem.sv
 
 rtl-mem-synth:
 	yosys -q -p "read_verilog -sv -Irtl/common -Irtl/mem rtl/mem/clover_scratchpad.sv; hierarchy -check -top clover_scratchpad; proc; opt; check -assert"
 	yosys -q -p "read_verilog -sv -Irtl/common -Irtl/bus -Irtl/top rtl/top/clover_axi_csr.sv; hierarchy -check -top clover_axi_csr; proc; opt; check -assert"
 	yosys -q -p "read_verilog -sv -Irtl/common -Irtl/core -Irtl/mem -Irtl/top rtl/top/clover_core_mem.sv; hierarchy -check -top clover_core_mem; proc; opt; check -assert"
+	yosys -q -p "read_verilog -sv -Irtl/common rtl/dma/clover_dma.sv; hierarchy -check -top clover_dma; proc; opt; check -assert"
+	yosys -q -p "read_verilog -sv -Irtl/common rtl/cmd/clover_cmd_proc.sv; hierarchy -check -top clover_cmd_proc; proc; opt; check -assert"
+	yosys -q -p "read_verilog -sv -Irtl/common -Irtl/top -Irtl/bus -Irtl/cmd -Irtl/dma -Irtl/mem rtl/top/clover_npu_mem.sv; hierarchy -check -top clover_npu_mem; proc; opt; check -assert"
 
 rtl-mem-test: tools
 	$(PY) tests/rtl/run_mem_tests.py

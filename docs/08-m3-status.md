@@ -1,6 +1,6 @@
-# 08 · M3a 状态：scratchpad + AXI4-Lite/CSR
+# 08 · M3 状态：存储、AXI、DMA 与命令队列
 
-**状态：M3a 已完成（2026-10-18）**。存储与 CSR 底座已经可综合、可单测，并且 5 级核可以直接从 scratchpad 取指/读写。DMA、AXI4 master、命令队列与 completion ring 尚未实现。
+**状态：M3b 已完成（2026-10-18）**。主机可以通过 AXI4-Lite 配置 CSR、写 queue tail 触发 doorbell；NPU 从 AXI 内存取 64 B 命令、驱动 2D DMA、写 completion、拉 IRQ。5 级核也可以直接从 scratchpad 取指/读写。
 
 ## 1. 已实现
 
@@ -11,7 +11,10 @@
 | Global CSR | `rtl/top/clover_csr.sv` | ID/VERSION/STATUS/CONTROL/IRQ/QUEUE/COMPLETE/CYCLE/ERROR/SCRATCH/CAP；queue tail doorbell |
 | AXI-CSR top | `rtl/top/clover_axi_csr.sv` | slave + CSR 集成 |
 | Core+mem top | `rtl/top/clover_core_mem.sv` | 核从 scratchpad 取指/读写；64 B 行 → 32-bit lane 适配；loader 端口 |
-| 测试 | `tests/rtl/run_mem_tests.py`、`run_core_mem_tests.py` | scratchpad、AXI-CSR、core-from-scratchpad |
+| AXI4 DMA | `rtl/dma/clover_dma.sv` | 2D copy，DRAM ↔ scratchpad，16 B 单拍 AXI，行/stride |
+| Command processor | `rtl/cmd/clover_cmd_proc.sv` | 64 B 命令 ring、doorbell、DMA、completion、IRQ、abort |
+| NPU memory top | `rtl/top/clover_npu_mem.sv` | AXI4-Lite + CSR + CP + DMA + scratchpad + AXI4 master mux |
+| 测试 | `tests/rtl/run_mem_tests.py`、`run_core_mem_tests.py` | scratchpad、AXI-CSR、DMA、CP、NPU end-to-end、core-from-scratchpad |
 
 ## 2. Scratchpad 接口
 
@@ -29,7 +32,18 @@
 - 数据写：按 `dmem_size/addr[1:0]` 生成 lane 内 byte enable，并左移数据到对应 lane。
 - loader 端口用于测试/未来主机初始化：64 B 行写，`loader_we` 优先于核写。
 
-## 4. 验证
+## 4. M3b：AXI4 master、DMA、命令队列
+
+- `clover_dma`：单拍 16 B AXI4 读写；2D 行/stride；源/目的/stride 必须 16 B 对齐，`bytes_per_row` 必须 16 B 倍数；错误描述符置 `error` 并停机。
+- `clover_cmd_proc`：
+  - 从 `queue_base + head*64` 取 4 个 16 B beat；
+  - 支持 `NOP`、`DMA_2D`、`SIGNAL`、`END`；未知命令写错误 completion；
+  - 成功 DMA 不写 completion；`SIGNAL`/`END`/错误写 16 B completion；
+  - completion 后拉 IRQ；`queue_head`/`completion_head` 按 size 回绕。
+- `clover_npu_mem`：AXI4-Lite CSR + CP + DMA + scratchpad；CP 与 DMA 共享 AXI4 master，CP 活动时优先。
+- 主机路径：AXI-Lite 写 `CONTROL/IRQ_ENABLE/QUEUE_*/COMPLETE_*` → 写 `QUEUE_TAIL` doorbell → NPU 取命令/搬数据/写 completion → `IRQ_STATUS` 可读可清。
+
+## 5. 验证
 
 ```bash
 make rtl-mem-lint
@@ -39,22 +53,25 @@ make rtl-mem-test
 
 - Scratchpad：全 64 B 写/读、byte enable、两行并行读、最后一行 `0x3FFC0`。
 - AXI-CSR：ID/VERSION/STATUS、CONTROL、QUEUE_BASE/SIZE/TAIL、doorbell、IRQ RW1C、RO 寄存器、byte strobe、abort/soft-reset pulse。
-- Core-from-scratchpad：`add`、`fib`、`hello`、`array`、`ptrs`、`bigarray` 六个 C 程序全部通过（退出码/串口一致）。
-- Yosys 对 scratchpad、AXI-CSR、core+mem 三个 top 均 `check -assert` 通过。
+- DMA：2D 行/stride 往返、目标数据逐 16 B 比对、错误对齐被拒绝。
+- Command processor：4 条命令（DMA→DMA→SIGNAL→END），completion ring 2 项（seq 1/2），IRQ 至少 2 次，queue/completion head 正确。
+- NPU memory top：AXI-Lite 配置 + doorbell + DMA + completion + IRQ 全链路，数据与 completion 逐字比对。
+- Core-from-scratchpad：`add`、`fib`、`hello`、`array`、`ptrs`、`bigarray` 六个 C 程序全部通过。
+- Yosys 对 scratchpad、AXI-CSR、DMA、CP、NPU top、core+mem 均 `check -assert` 通过。
 
-## 5. 已知限制
+## 6. 已知限制
 
-- Scratchpad 读是组合逻辑，不是同步 SRAM；M3b 可加 1 周期读延迟。
-- 没有 bank 冲突检测；当前假设 64 B 对齐访问。
-- 没有 I-cache/D-cache、AXI4 master、DMA、命令队列、completion ring。
-- CSR 的 `STATUS` 只反映 `status_busy` 输入；`QUEUE_HEAD/COMPLETE_HEAD` 固定 0。
-- AXI4-Lite 没有地址越界检查；窗口由上层解码。
-- 没有 AXI protocol checker / 随机 backpressure 回归。
+- AXI4 master 目前只发单拍 16 B INCR；没有 burst 合并。
+- DMA 要求源/目的/stride 16 B 对齐、`bytes_per_row` 为 16 B 倍数；不做非对齐拆分。
+- Scratchpad 读是组合逻辑，不是同步 SRAM；没有 bank 冲突检测。
+- 没有 I-cache/D-cache；没有 AXI protocol checker / 随机 backpressure 回归。
+- `clover_npu_mem` 还没有接 5 级核；core 目前通过 `clover_core_mem` 独立验证。
+- 没有 `RUN` 命令；DMA/命令队列先打通，kernel launch 在 M4/M5。
+- CSR 的 `STATUS` 只反映 CP/DMA busy；错误码/计数仍是最小实现。
 
-## 6. 下一步（M3b）
+## 7. 下一步
 
-1. AXI4 master（128-bit，INCR burst，读写通道）。
-2. DMA 2D（DRAM ↔ scratchpad，行/stride）。
-3. Command processor：ring fetch、doorbell、completion、IRQ、abort。
-4. Core + DMA + CP 的 `clover_npu` 顶层。
-5. `libclover` 仿真后端与一条 host → DMA → scratchpad → core 的端到端测试。
+1. 把 5 级核接入 `clover_npu_mem`，增加 `RUN/WAIT` 命令。
+2. Tile engine（M4）：MMA/VEC/CVT/REDUCE + 描述符。
+3. AXI protocol checker、随机 backpressure、DMA burst。
+4. `libclover` 仿真后端与 host → DMA → core 的 C 程序端到端。

@@ -69,6 +69,51 @@ def main() -> int:
             ROOT / "rtl" / "top",
         ],
     )
+    ok &= run_test(
+        "dma",
+        [ROOT / "sim" / "dma" / "clover_dma_tb.sv"],
+        "clover_dma_tb",
+        "test_dma",
+        ROOT / "sim" / "dma",
+        [
+            ROOT / "rtl" / "common",
+            ROOT / "rtl" / "dma",
+            ROOT / "rtl" / "mem",
+            ROOT / "sim" / "dma",
+        ],
+    )
+    ok &= run_test(
+        "cmd_proc",
+        [ROOT / "sim" / "cmd" / "clover_cp_tb.sv"],
+        "clover_cp_tb",
+        "test_cp",
+        ROOT / "sim" / "cmd",
+        [
+            ROOT / "rtl" / "common",
+            ROOT / "rtl" / "cmd",
+            ROOT / "rtl" / "dma",
+            ROOT / "rtl" / "mem",
+            ROOT / "sim" / "dma",
+            ROOT / "sim" / "cmd",
+        ],
+    )
+    ok &= run_test(
+        "npu_mem",
+        [ROOT / "sim" / "npu" / "clover_npu_mem_tb.sv"],
+        "clover_npu_mem_tb",
+        "test_npu_mem",
+        ROOT / "sim" / "npu",
+        [
+            ROOT / "rtl" / "common",
+            ROOT / "rtl" / "top",
+            ROOT / "rtl" / "bus",
+            ROOT / "rtl" / "cmd",
+            ROOT / "rtl" / "dma",
+            ROOT / "rtl" / "mem",
+            ROOT / "sim" / "dma",
+            ROOT / "sim" / "npu",
+        ],
+    )
     return 0 if ok else 1
 
 

@@ -2,7 +2,7 @@
 
 CloverNPU 是一个**面向研究与验证**的传统体制可编程 NPU。它不采用 GPGPU 的宽 SIMT/warp 模型，也不把卷积、ReLU 等算子做成硬连线宏；计算由标量控制核执行 C kernel，通过紧耦合的 tile 指令驱动可编程向量/矩阵引擎，配合 DMA、scratchpad 与显式片上缓存完成。
 
-> 当前状态：**M3a 完成**。M2 的标量工具链与 5 级 RTL 核已稳定；M3a 新增 256 KB scratchpad、AXI4-Lite + 全局 CSR，并让 5 级核从 scratchpad 取指/读写。DMA、AXI4 master 与命令队列是下一段。
+> 当前状态：**M3b 完成**。主机可通过 AXI4-Lite CSR + doorbell 驱动 NPU 命令队列；NPU 从 AXI 内存取 64 B 命令、用 2D DMA 在 DRAM/scratchpad 间搬数据、写 completion 并拉 IRQ。5 级核也可直接从 scratchpad 取指/读写。下一段是 core + CP 整合与 tile engine。
 
 ## 设计目标
 
@@ -65,8 +65,8 @@ make smoke                  # 工具链最小闭环：Verilator + Icarus + cocot
 make tools                  # 构建 cloverc / clover-as / clover-iss / clover-objdump
 make m2-test                # 23 个汇编/C 程序的 ISS 端到端回归
 make rtl-core-test          # 19 个 C 程序在 5 级 RTL 核上复现
-make rtl-mem-test           # scratchpad + AXI-CSR + core-from-scratchpad
-make rtl-mem-synth          # Yosys check of the M3 memory blocks
+make rtl-mem-test           # scratchpad + AXI-CSR + DMA + CP + NPU end-to-end
+make rtl-mem-synth          # Yosys check of the M3 blocks
 ```
 
 ## 设计文档
@@ -79,7 +79,7 @@ make rtl-mem-synth          # Yosys check of the M3 memory blocks
 - [验证与工具链](docs/05-verification.md)
 - [路线图](docs/06-roadmap.md)
 - [M2 状态（软件切片 + RTL 核）](docs/07-m2-status.md)
-- [M3a 状态（scratchpad + AXI-Lite/CSR）](docs/08-m3-status.md)
+- [M3 状态（scratchpad + AXI + DMA + 命令队列）](docs/08-m3-status.md)
 
 ## 现在就能跑的 C
 
@@ -119,13 +119,16 @@ void gemm_block(const clover_mma_desc *d)
 
 真正的 GEMM 由 C 循环遍历 M/N/K block，并在 K 方向设置 `accumulate`，不是硬件固化算子。
 
-## M3a 的存储/总线底座
+## M3 的存储/总线/命令子系统
 
 - `rtl/mem/clover_scratchpad.sv`：256 KB，16 bank × 16 KB，2 个 64 B 读端口 + 1 个 64 B 写端口，byte enable。
 - `rtl/bus/clover_axi4lite_slave.sv`：32-bit AXI4-Lite slave，独立 AW/W 通道、B/R 响应。
 - `rtl/top/clover_csr.sv`：全局 CSR（ID/VERSION/STATUS/CONTROL/IRQ/QUEUE/COMPLETE/CYCLE/SCRATCH/CAP）。
+- `rtl/dma/clover_dma.sv`：2D DMA，DRAM ↔ scratchpad，16 B 单拍 AXI。
+- `rtl/cmd/clover_cmd_proc.sv`：64 B 命令 ring、doorbell、DMA、completion、IRQ。
 - `rtl/top/clover_axi_csr.sv`：AXI4-Lite + CSR 集成。
-- `rtl/top/clover_core_mem.sv`：5 级核 + scratchpad 取指/读写适配器（带测试 loader 端口）。
+- `rtl/top/clover_npu_mem.sv`：AXI4-Lite + CP + DMA + scratchpad + AXI4 master。
+- `rtl/top/clover_core_mem.sv`：5 级核 + scratchpad 取指/读写适配器。
 
 ## M2b 的 RTL 核
 
