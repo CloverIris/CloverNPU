@@ -1,0 +1,17 @@
+.venv/
+build/
+__pycache__/
+*.py[cod]
+*.vcd
+*.fst
+*.vvp
+*.o
+*.a
+*.so
+*.dylib
+*.clov
+*.elf
+obj_dir/
+.DS_Store
+
+results.xml

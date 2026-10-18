@@ -1,0 +1,4 @@
+cocotb==2.1.0
+cocotb-bus==0.3.0
+numpy>=2.0
+pytest>=8.0

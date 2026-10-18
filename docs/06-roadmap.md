@@ -1,0 +1,166 @@
+# 06 · 路线图
+
+路线图按“每个里程碑都能独立验证”的原则拆分。M2 之后的顺序允许调整，但 **ABI 与描述符布局在 M1 冻结**，后续变更必须走版本升级。
+
+## M0 · 工具链与仓库（已完成）
+
+- Homebrew 安装 Verilator 5.052、Icarus 13.0、Yosys 0.69。
+- 项目 `.venv` 安装 cocotb 2.1.0、numpy、pytest。
+- 建立目录骨架、`scripts/setup.sh`、`scripts/check_tools.sh`。
+- `make smoke` 跑通 Verilator / Icarus / cocotb / Yosys。
+
+**验收**：`make smoke` 退出码 0；`scripts/check_tools.sh` 全部通过。
+
+## M1 · 设计基线与 ABI（当前）
+
+- 冻结架构、ISA、ABI、编译器、验证规范。
+- 冻结描述符/命令/kernel args/CLOV 布局。
+- 建立 RTL/编译器/runtime 目录与构建入口。
+- 完成工具链 smoke test。
+- 提交初始 git 基线。
+
+**验收**：
+
+- 文档中所有结构体大小、偏移、magic 自洽。
+- 头文件（M2 建立）与文档逐字段一致。
+- 评审通过：没有未决的“会影响布局”的问题。
+
+## M2 · 标量核 + ISS + 汇编器 + 最小 C 编译器
+
+目标：**让一段整数 C 程序在 ISS 上跑出正确结果。**
+
+- Clover-S RTL：regfile、ALU、decoder、branch、LSU、CSR、trap、5 级流水。
+- `clover-iss`：指令级模拟器，支持内存/CSR/trap/trace。
+- `clover-as`：两遍汇编器，ELF32 `.o`。
+- `cloverc` 最小前端：`int`、局部变量、算术、if/while/for、函数调用、`return`。
+- 测试：随机指令差分（ISS vs RTL）、C 程序差分（host clang vs cloverc）。
+- 无 cache（先直连 scratchpad/DRAM 模型）。
+
+**验收**：
+
+- `fib(20)`、排序、矩阵索引等 20+ 程序在 ISS 上正确。
+- 随机 10 万条整数指令，RTL 与 ISS 终态一致。
+- `clover-objdump` 能反汇编自身输出。
+
+## M3 · 存储、总线、DMA、命令队列
+
+目标：**主机能通过 AXI-Lite 配置，通过 AXI4 搬数据，NPU 按命令队列执行。**
+
+- Scratchpad 256 KB、16 bank、2R1W、仲裁。
+- I-cache 32 KB / D-cache 16 KB（可先关闭 cache，直连）。
+- AXI4 master + AXI4-Lite slave + 协议断言。
+- DMA 2D，4 outstanding。
+- Command processor：ring、doorbell、completion、IRQ、error/abort。
+- `libclover` 仿真后端：mmap 共享内存 + AXI 事务模型。
+
+**验收**：
+
+- 2D DMA 在 DRAM/scratchpad 之间往返 bit-exact。
+- ring 回绕 1000 条命令无丢失。
+- completion/IRQ 正确；错误命令能被捕获并上报。
+- AXI 随机 backpressure 下无协议失败。
+
+## M4 · Tile engine
+
+目标：**描述符驱动的 MMA/VEC/CVT/REDUCE 在 RTL 上正确。**
+
+- FP32 加法/乘法/比较、FP16/BF16/FP8/FP4 解包/打包。
+- 16x16 MAC 阵列，M/N/K <= 16，转置、accumulate、scale、post-op。
+- 16 lane 向量引擎，所有 VEC op，stride/broadcast，reduce 树。
+- Tile 描述符 fetch/decode/validate、错误码、busy/计数。
+- 与 Python golden bit-exact。
+
+**验收**：
+
+- 所有 dtype 的 MMA 边界用例（M/N/K=1/15/16）bit-exact。
+- 转置/accumulate/per-channel scale 正确。
+- VEC 所有 op 与 reduce 树 bit-exact。
+- 错误描述符（magic/对齐/越界/dtype）被拒绝且不挂死。
+
+## M5 · 扩展 C 编译器 + kernel 库
+
+目标：**用 C 写 GEMM/conv/elementwise，动态 shape，在 ISS 上端到端正确。**
+
+- 扩展 C99 子集：指针、数组、struct/union/enum、switch/goto、初始化器、预处理器。
+- 寄存器分配、ABI lowering、ELF 链接、CLOV 打包。
+- `libclover`（Clover 目标）：memcpy/memset、64 位 helper、softfloat。
+- `kernels/gemm.c`、`conv2d.c`、`elementwise.c`、`softmax.c`。
+- `clover-kernel` 元数据与 manifest。
+
+**验收**：
+
+- GEMM：M/N/K ∈ {1,15,16,17,31,64,127} 与 golden bit-exact。
+- conv2d：im2col + GEMM 组合，stride/padding 动态。
+- softmax：max/sum/exp 近似，误差在文档容差内。
+- 编译器通过 50+ 负例与 100+ 正例。
+
+## M6 · 图 runtime + RTL 端到端
+
+目标：**主机组图，NPU 执行，动态 shape，RTL 与 golden 一致。**
+
+- `libclover` Graph IR（JSON）、shape inference、内存规划、命令编码。
+- 2-3 节点图：DMA → GEMM → elementwise → DMA。
+- Verilator 顶层仿真 + 共享内存后端。
+- RTL 与 ISS 的 kernel 级 co-sim。
+- 示例：`examples/gemm_dynamic/`、`examples/mlp/`。
+
+**验收**：
+
+- 同一图在 ISS 与 RTL 上输出 bit-exact。
+- 改变 batch/M/N/K 不需要重编译 kernel。
+- 图执行失败时能定位到 command/seq/kernel。
+
+## M7 · 加固与发布
+
+- 覆盖率（定向 + 随机），失败复现脚本。
+- Yosys 全量 `check`，缩减参数 `synth` 门禁。
+- 性能计数器与 benchmark（GEMM/conv）。
+- 文档补齐：移植指南、添加新 dtype/op 的步骤、FAQ。
+- 版本 v0.1.0 tag。
+
+**验收**：
+
+- `make check` 在干净环境一键通过。
+- 所有公开 ABI 结构体有 `_Static_assert`。
+- 已知限制清单完整。
+
+## 建议的实现顺序（垂直切片）
+
+不要先写完整 RTL 再写软件。建议：
+
+1. `clover_pkg.sv` + ISS + 汇编器 + 最小 compiler（M2）。
+2. 用 ISS 跑通 GEMM 的 C 代码（先不管 RTL tile）。
+3. 写 MMA PE + array，用 cocotb 直接注入描述符比对 golden（M4 的一部分）。
+4. 把 core 的 `tile.mma` 接到 array，跑单 block。
+5. 补 DMA/CP/AXI，跑 host → NPU → host。
+6. 扩编译器与 kernel 库，跑动态 shape。
+7. 最后接图 runtime 与 RTL co-sim。
+
+这样每个阶段都有可运行产物，避免“大爆炸集成”。
+
+## 风险与缓解
+
+| 风险 | 影响 | 缓解 |
+|---|---|---|
+| FP32 加法/乘法 RTL 舍入错误 | 全链路数值不一致 | 先写独立 FP 单元 + 穷举/随机 vs SoftFloat；再集成 |
+| 16x16 FP32 阵列仿真慢 | 回归时间失控 | 参数化 `NUM_PE_*`；CI 用 4x4/8x8；夜间跑 16x16 |
+| 编译器范围蔓延 | 软件迟迟不能用 | 以 kernel 需求驱动；每加一个特性配 3 个测试；M2 只做最小集 |
+| AXI 协议 corner case | 集成失败 | 自建 protocol checker + 随机 backpressure；先小 burst |
+| Cache/DMA 一致性 | 偶发数据错误 | 默认张量走 scratchpad；文档化 fence；测试专门覆盖 |
+| 动态 shape 边界 | 越界/漏算 | 统一 mask 逻辑；M/N/K=1/15/16/17 必测 |
+| 工具版本漂移 | 环境不可复现 | `check_tools.sh` 最低版本；记录实测版本；CI 固定 |
+
+## 工作量粗估
+
+以“可运行的 v0.1”为目标，不含流片与物理设计：
+
+| 阶段 | 主要工作 | 粗估 |
+|---|---|---|
+| M2 | 核 + ISS + 汇编 + 最小 C | 大 |
+| M3 | 存储/总线/DMA/CP | 大 |
+| M4 | FP + MMA + VEC | 很大 |
+| M5 | 编译器 + kernel 库 | 很大 |
+| M6 | 图 runtime + co-sim | 中 |
+| M7 | 加固/文档 | 中 |
+
+这是研究项目，不按商业 IP 的进度承诺；每个里程碑以“可验证”而不是“代码写完”为准。
