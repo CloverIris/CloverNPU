@@ -114,7 +114,13 @@
 - `M=17,N=19,K=23` 通过；修复 port A 隐式 1-bit、kernel-return rd 检查、descriptor 锁存、结果 DMA 方向四个 bug。
 - 详见 [RTL GEMM](13-rtl-gemm.md)。
 
-#### M4d · RTL VEC 与 FP8/FP4（下一步）
+#### M4d · RTL VEC + 两节点图（已完成，2026-10-18）
+
+- FP32 VEC ADD/MUL/RELU；256 lanes 独立测试通过。
+- MMA/VEC 接入 NPU；GEMM → VEC ADD 两节点图 17×19×23 通过。
+- 详见 [RTL 图](14-rtl-graph.md)。
+
+#### M4e · 多 shape、FP8/FP4 与 RTL 图后端（下一步）
 
 目标：**描述符驱动的 MMA/VEC/CVT/REDUCE 在 RTL 上正确。**
 

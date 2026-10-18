@@ -5,6 +5,7 @@
 `include "clover_scratchpad.sv"
 `include "clover_core.sv"
 `include "clover_tile_mma.sv"
+`include "clover_tile_vec.sv"
 
 // M4a NPU top: AXI4-Lite CSR + command processor + 2D DMA + 5-stage core +
 // scratchpad.  Kernel code/args are DMA'd into scratchpad before RUN.
@@ -204,6 +205,20 @@ module clover_npu_mem (
     logic [63:0] tile_w_be;
     logic        tile_w_ready;
 
+    logic        mma_start, vec_start;
+    logic        mma_busy, mma_done, mma_error;
+    logic [3:0]  mma_error_code;
+    logic        mma_a_req, mma_b_req, mma_w_req;
+    logic [17:0] mma_a_addr, mma_b_addr, mma_w_addr;
+    logic [511:0] mma_w_data;
+    logic [63:0] mma_w_be;
+    logic        vec_busy, vec_done, vec_error;
+    logic [3:0]  vec_error_code;
+    logic        vec_a_req, vec_b_req, vec_w_req;
+    logic [17:0] vec_a_addr, vec_b_addr, vec_w_addr;
+    logic [511:0] vec_w_data;
+    logic [63:0] vec_w_be;
+
     logic        c_imem_req;
     logic [31:0] c_imem_addr;
     logic        c_imem_ready;
@@ -233,6 +248,22 @@ module clover_npu_mem (
     assign tile_busy = tile_busy_i;
     assign tile_error = tile_error_i;
     assign tile_error_code = tile_error_code_i;
+
+    assign mma_start = tile_valid && (tile_op == 3'd0);
+    assign vec_start = tile_valid && (tile_op == 3'd1);
+    assign tile_busy_i = mma_busy | vec_busy;
+    assign tile_done = mma_done | vec_done;
+    assign tile_error_i = mma_error | vec_error;
+    assign tile_error_code_i = vec_error ? vec_error_code : mma_error_code;
+
+    assign tile_a_req  = mma_busy ? mma_a_req : vec_a_req;
+    assign tile_a_addr = mma_busy ? mma_a_addr : vec_a_addr;
+    assign tile_b_req  = mma_busy ? mma_b_req : vec_b_req;
+    assign tile_b_addr = mma_busy ? mma_b_addr : vec_b_addr;
+    assign tile_w_req  = mma_busy ? mma_w_req : vec_w_req;
+    assign tile_w_addr = mma_busy ? mma_w_addr : vec_w_addr;
+    assign tile_w_data = mma_busy ? mma_w_data : vec_w_data;
+    assign tile_w_be   = mma_busy ? mma_w_be : vec_w_be;
 
     clover_axi_csr u_csr (
         .clk              (clk),
@@ -490,25 +521,47 @@ module clover_npu_mem (
         .halt_reason()
     );
 
-    clover_tile_mma u_tile (
+    clover_tile_mma u_mma (
         .clk        (clk),
         .rst_n      (rst_n),
-        .start      (tile_valid),
+        .start      (mma_start),
         .desc_addr  (tile_desc),
-        .busy       (tile_busy_i),
-        .done       (tile_done),
-        .error      (tile_error_i),
-        .error_code (tile_error_code_i),
-        .a_req      (tile_a_req),
-        .a_addr     (tile_a_addr),
+        .busy       (mma_busy),
+        .done       (mma_done),
+        .error      (mma_error),
+        .error_code (mma_error_code),
+        .a_req      (mma_a_req),
+        .a_addr     (mma_a_addr),
         .a_rdata    (tile_a_rdata),
-        .b_req      (tile_b_req),
-        .b_addr     (tile_b_addr),
+        .b_req      (mma_b_req),
+        .b_addr     (mma_b_addr),
         .b_rdata    (tile_b_rdata),
-        .w_req      (tile_w_req),
-        .w_addr     (tile_w_addr),
-        .w_data     (tile_w_data),
-        .w_be       (tile_w_be),
+        .w_req      (mma_w_req),
+        .w_addr     (mma_w_addr),
+        .w_data     (mma_w_data),
+        .w_be       (mma_w_be),
+        .w_ready    (tile_w_ready)
+    );
+
+    clover_tile_vec u_vec (
+        .clk        (clk),
+        .rst_n      (rst_n),
+        .start      (vec_start),
+        .desc_addr  (tile_desc),
+        .busy       (vec_busy),
+        .done       (vec_done),
+        .error      (vec_error),
+        .error_code (vec_error_code),
+        .a_req      (vec_a_req),
+        .a_addr     (vec_a_addr),
+        .a_rdata    (tile_a_rdata),
+        .b_req      (vec_b_req),
+        .b_addr     (vec_b_addr),
+        .b_rdata    (tile_b_rdata),
+        .w_req      (vec_w_req),
+        .w_addr     (vec_w_addr),
+        .w_data     (vec_w_data),
+        .w_be       (vec_w_be),
         .w_ready    (tile_w_ready)
     );
 

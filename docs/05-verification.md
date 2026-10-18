@@ -188,10 +188,11 @@ make tile-gemm-test  # dynamic-shape GEMM on the ISS tile engine
 make runtime-graph-test # GEMM -> VEC ADD graph via libclover sim
 make rtl-tile-test   # FP32 add/mul + 16x16x16 MMA RTL
 make rtl-gemm-test   # full RTL GEMM via CP/DMA/core/tile MMA
+make rtl-graph-test  # RTL GEMM -> VEC ADD two-node graph
 make check           # 以上全部
 ```
 
-M2、M3、M4a、M4b-ISS、M4c-MMA、M4c-Integration 与 M6a 已完成。当前 RTL 存储/命令测试以定向用例为主；AXI 随机 backpressure、ring 回绕 1000 条、I/D-cache 一致性尚未覆盖；tile engine 尚无 RTL。
+M2、M3、M4a、M4b-ISS、M4c-MMA、M4c-Integration、M4d 与 M6a 已完成。当前 RTL 存储/命令测试以定向用例为主；AXI 随机 backpressure、ring 回绕 1000 条、I/D-cache 一致性尚未覆盖；tile engine 尚无 RTL。
 
 ## 9. 失败处理约定
 

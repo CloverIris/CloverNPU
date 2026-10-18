@@ -56,6 +56,21 @@ def main() -> int:
         "fp",
     )
     ok &= run_test(
+        "tile_vec",
+        [ROOT / "sim" / "tile" / "clover_tile_vec_tb.sv"],
+        "clover_tile_vec_tb",
+        "test_tile_vec",
+        ROOT / "sim" / "tile",
+        [
+            ROOT / "rtl" / "common",
+            ROOT / "rtl" / "fp",
+            ROOT / "rtl" / "tile",
+            ROOT / "rtl" / "mem",
+            ROOT / "sim" / "tile",
+        ],
+        "tile_vec",
+    )
+    ok &= run_test(
         "tile_mma",
         [ROOT / "sim" / "tile" / "clover_tile_mma_tb.sv"],
         "clover_tile_mma_tb",

@@ -6,7 +6,7 @@ CMAKE_BUILD := $(BUILD)/cmake
 CC      ?= cc
 CXX     ?= c++
 
-.PHONY: help all check check-tools abi-check tools compiler m2-test tile-gemm-test runtime-graph-test rtl-lint rtl-synth rtl-core-test rtl-mem-lint rtl-mem-synth rtl-mem-test rtl-npu-test rtl-gemm-test rtl-tile-test rtl-tile-lint rtl-tile-synth smoke lint test synth clean venv
+.PHONY: help all check check-tools abi-check tools compiler m2-test tile-gemm-test runtime-graph-test rtl-lint rtl-synth rtl-core-test rtl-mem-lint rtl-mem-synth rtl-mem-test rtl-npu-test rtl-gemm-test rtl-graph-test rtl-tile-test rtl-tile-lint rtl-tile-synth smoke lint test synth clean venv
 
 help:
 	@echo "CloverNPU targets:"
@@ -25,6 +25,7 @@ help:
 	@echo "  make rtl-mem-test  scratchpad, AXI-CSR, DMA, CP and core-from-scratchpad"
 	@echo "  make rtl-npu-test  host -> command queue -> RUN C kernel -> completion"
 	@echo "  make rtl-gemm-test full RTL GEMM: CP + DMA + core + tile MMA"
+	@echo "  make rtl-graph-test RTL GEMM -> VEC ADD two-node graph"
 	@echo "  make smoke        L0 toolchain smoke (Verilator/Icarus/cocotb/Yosys)"
 	@echo "  make lint         Verilator lint of the smoke DUT"
 	@echo "  make test         run cocotb smoke test"
@@ -34,7 +35,7 @@ help:
 
 all: check
 
-check: check-tools abi-check smoke m2-test tile-gemm-test runtime-graph-test rtl-lint rtl-synth rtl-core-test rtl-mem-lint rtl-mem-synth rtl-mem-test rtl-npu-test rtl-gemm-test rtl-tile-lint rtl-tile-synth rtl-tile-test
+check: check-tools abi-check smoke m2-test tile-gemm-test runtime-graph-test rtl-lint rtl-synth rtl-core-test rtl-mem-lint rtl-mem-synth rtl-mem-test rtl-npu-test rtl-gemm-test rtl-graph-test rtl-tile-lint rtl-tile-synth rtl-tile-test
 
 check-tools:
 	@./scripts/check_tools.sh
@@ -100,12 +101,18 @@ rtl-npu-test: tools
 rtl-gemm-test: tools
 	$(PY) tests/rtl/run_npu_gemm_tests.py
 
+rtl-graph-test: tools
+	$(PY) tests/rtl/run_npu_graph_tests.py
+
 rtl-tile-lint:
 	verilator --lint-only -Wall -Wno-fatal --top-module clover_tile_mma \
 		-Irtl/common -Irtl/fp rtl/tile/clover_tile_mma.sv
+	verilator --lint-only -Wall -Wno-fatal --top-module clover_tile_vec \
+		-Irtl/common -Irtl/fp rtl/tile/clover_tile_vec.sv
 
 rtl-tile-synth:
 	yosys -q -p "read_verilog -sv -Irtl/common -Irtl/fp rtl/tile/clover_tile_mma.sv; hierarchy -check -top clover_tile_mma; proc; opt; check -assert"
+	yosys -q -p "read_verilog -sv -Irtl/common -Irtl/fp rtl/tile/clover_tile_vec.sv; hierarchy -check -top clover_tile_vec; proc; opt; check -assert"
 
 rtl-tile-test:
 	$(PY) tests/rtl/run_tile_tests.py
@@ -140,7 +147,7 @@ venv:
 	.venv/bin/python -m pip install -q -r requirements.txt
 
 clean:
-	rm -rf "$(BUILD)/smoke" "$(BUILD)/abi" "$(CMAKE_BUILD)" "$(BUILD)/m2" "$(BUILD)/rtl" "$(BUILD)/mem" "$(BUILD)/core_mem" "$(BUILD)/npu_core" "$(BUILD)/fp" "$(BUILD)/tile_mma" "$(BUILD)/rtl_gemm"
+	rm -rf "$(BUILD)/smoke" "$(BUILD)/abi" "$(CMAKE_BUILD)" "$(BUILD)/m2" "$(BUILD)/rtl" "$(BUILD)/mem" "$(BUILD)/core_mem" "$(BUILD)/npu_core" "$(BUILD)/fp" "$(BUILD)/tile_mma" "$(BUILD)/tile_vec" "$(BUILD)/rtl_gemm" "$(BUILD)/rtl_graph"
 	rm -rf "$(BUILD)/host"
 	rm -rf "$(ROOT)/sim/smoke/__pycache__"
 	find "$(ROOT)/sim" -name '*.vvp' -delete

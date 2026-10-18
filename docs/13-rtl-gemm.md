@@ -54,7 +54,7 @@ PASS npu_rtl_gemm
 
 ## 4. 已知限制
 
-- RTL 只支持 MMA；VEC ADD 仍只在 ISS 图 runtime 中。
+- RTL 已支持 MMA 与 FP32 VEC；VEC 的 FP16/BF16/FP8/FP4 路径未实现。
 - A/B 仅 FP16/BF16；FP8/FP4 的 RTL 解包未实现。
 - 次正规输入/输出 flush 到 0；没有完整 IEEE 次正规舍入。
 - 串行 1 MAC/cycle：17×19×23 的 8 个 block 约 18 万 cycles（仿真 184 µs）。
@@ -65,8 +65,8 @@ PASS npu_rtl_gemm
 
 ## 5. 下一步
 
-1. RTL VEC 引擎，让 `GEMM → ADD` 图在 RTL 上跑。
+1. 把 16×16×16 / 其他 shape 加入 RTL GEMM 回归。
 2. FP8/FP4 RTL 解包与 scale。
-3. 把 16×16×16 / 其他 shape 加入 RTL GEMM 回归。
-4. 图 runtime 增加 RTL/Verilator 后端，完成 RTL 图执行。
-5. `CLOV`/manifest、编译器 `struct/#include/aligned(64)`。
+3. 图 runtime 增加 RTL/Verilator 后端，完成 RTL 图执行。
+4. `CLOV`/manifest、编译器 `struct/#include/aligned(64)`。
+5. RTL VEC 已完成，见 [RTL 图](14-rtl-graph.md)。

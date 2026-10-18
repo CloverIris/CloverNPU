@@ -2,7 +2,7 @@
 
 CloverNPU 是一个**面向研究与验证**的传统体制可编程 NPU。它不采用 GPGPU 的宽 SIMT/warp 模型，也不把卷积、ReLU 等算子做成硬连线宏；计算由标量控制核执行 C kernel，通过紧耦合的 tile 指令驱动可编程向量/矩阵引擎，配合 DMA、scratchpad 与显式片上缓存完成。
 
-> 当前状态：**M4c-Integration + M6a 完成**。同一个 `kernels/gemm.c` 已能在 RTL 上跑完整 `M=17,N=19,K=23` GEMM：CP 队列 + DMA + core `tile.mma/tile.wait` + 串行 MMA + completion/IRQ。图 runtime 仍走 ISS；RTL VEC 与 FP8/FP4 是下一段。
+> 当前状态：**M4d + M6a 完成**。RTL 已跑通 `GEMM → VEC ADD` 两节点图（17×19×23）：CP 队列 + DMA + core `tile.mma/tile.vec/tile.wait` + completion/IRQ。主机图 runtime 仍走 ISS；多 shape、FP8/FP4 与 RTL 图后端是下一段。
 
 ## 设计目标
 
@@ -71,6 +71,7 @@ make tile-gemm-test         # dynamic-shape GEMM on the ISS tile engine
 make runtime-graph-test     # GEMM -> VEC ADD graph via libclover sim
 make rtl-tile-test          # FP32 add/mul + 16x16x16 MMA RTL
 make rtl-gemm-test          # full RTL GEMM via CP/DMA/core/tile MMA
+make rtl-graph-test         # RTL GEMM -> VEC ADD two-node graph
 make rtl-mem-synth          # Yosys check of the M3/M4a blocks
 ```
 
@@ -90,6 +91,7 @@ make rtl-mem-synth          # Yosys check of the M3/M4a blocks
 - [主机图 runtime（GEMM → VEC ADD）](docs/11-graph-runtime.md)
 - [RTL Tile MMA（FP32 + 16×16×16）](docs/12-rtl-tile-mma.md)
 - [RTL GEMM 端到端](docs/13-rtl-gemm.md)
+- [RTL 两节点图（GEMM → VEC ADD）](docs/14-rtl-graph.md)
 
 ## 现在就能跑的 C
 
@@ -143,7 +145,8 @@ void gemm_block(const clover_mma_desc *d)
 - `kernels/gemm.c`：动态 M/N/K 的 16×16×16 block GEMM；ISS 功能级 tile engine 通过。
 - `kernels/add.c` + `runtime/src/clover_sim.cpp`：`GEMM → VEC ADD` 两节点图。
 - `rtl/fp/clover_fp_pkg.sv` + `rtl/tile/clover_tile_mma.sv`：可综合 FP32 add/mul 与串行 MMA。
-- `rtl/top/clover_npu_mem.sv`：tile MMA 接入 core/CP/DMA；RTL GEMM 17×19×23 通过。
+- `rtl/tile/clover_tile_vec.sv`：FP32 VEC ADD/MUL/RELU。
+- `rtl/top/clover_npu_mem.sv`：tile MMA/VEC 接入 core/CP/DMA；RTL GEMM 与 GEMM→ADD 图通过。
 
 ## M2b 的 RTL 核
 
