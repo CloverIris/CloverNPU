@@ -155,4 +155,4 @@ GEMM 通过 kernel 中的循环遍历 M/N/K 分块，并组合 MMA、VEC、DMA�
 
 ## 许可
 
-尚未指定。项目正式对外发布前，请由项目所有者确定并添加许可证。
+本项目采用 MIT License，详见 [LICENSE](LICENSE)。
