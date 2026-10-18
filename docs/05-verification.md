@@ -170,20 +170,17 @@ yosys -p "
 
 ```bash
 make check-tools     # 版本
-make smoke           # L0
+make abi-check       # ABI 结构体大小/偏移 static_assert
+make smoke           # L0：Verilator + Icarus + cocotb + Yosys
 make lint            # Verilator lint
-make test            # pytest + cocotb
+make test            # cocotb smoke
 make synth           # Yosys check
+make tools           # 构建 cloverc/clover-as/clover-iss/clover-objdump
+make m2-test         # M2a 23 个汇编/C 端到端用例
 make check           # 以上全部
 ```
 
-M2 起增加：
-
-```bash
-make compiler        # 构建 cloverc
-make iss             # 构建 clover-iss
-make e2e             # GEMM/conv 端到端
-```
+M2a 已完成；M2b 会增加 `make rtl-core-test` 与 ISS/RTL 差分。
 
 ## 9. 失败处理约定
 

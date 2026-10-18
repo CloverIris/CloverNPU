@@ -2,7 +2,7 @@
 
 CloverNPU 是一个**面向研究与验证**的传统体制可编程 NPU。它不采用 GPGPU 的宽 SIMT/warp 模型，也不把卷积、ReLU 等算子做成硬连线宏；计算由标量控制核执行 C kernel，通过紧耦合的 tile 指令驱动可编程向量/矩阵引擎，配合 DMA、scratchpad 与显式片上缓存完成。
 
-> 当前状态：**M1 设计基线（v0.1）**。工具链已安装验证；架构、ISA、ABI、编译器与验证规范已冻结；RTL/编译器实现从 M2 开始。
+> 当前状态：**M2a 软件垂直切片完成**。工具链、架构/ISA/ABI 规范、汇编器、ISS 和最小 C 编译器已可端到端运行；RTL 标量核（M2b）刚开始。
 
 ## 设计目标
 
@@ -25,22 +25,24 @@ CloverNPU 是一个**面向研究与验证**的传统体制可编程 NPU。它�
 | 外部接口 | AXI4 master（128-bit data）/ AXI4-Lite slave（32-bit） |
 | 命令接口 | 64 B 命令、DRAM 环形队列、doorbell + completion ring + IRQ |
 | 主机 runtime | C API + JSON Graph IR，执行时解析动态 shape |
-| 编译器 | C++17 自研 `cloverc`，扩展 C99 子集，输出 ELF32/CLOV image |
+| 编译器 | C++17 自研 `cloverc`，当前 C 子集输出 flat image；ELF32/CLOV 在 M5 接入 |
 | 仿真 | Verilator 5.x + cocotb/pytest + C++ ISS + Python golden |
 
 ## 仓库结构
 
 ```
 docs/       架构、ISA、ABI、编译器、验证与路线图规范
+include/    共享 ABI 头文件（host + kernel）
 rtl/        SystemVerilog 可综合 RTL
 sim/        Verilator/cocotb 测试、ISS、Python golden model
-compiler/   cloverc 编译器、汇编器、链接器
-runtime/    主机侧 libclover、graph runtime
+toolchain/  ISA 编解码、汇编器、ISS 核心库
+compiler/   cloverc 编译器前端/后端/驱动
+runtime/    主机侧 libclover、graph runtime（M6）
 kernels/    用 Clover C 写的 GEMM/conv/elementwise 等 kernel
 examples/   端到端示例与图定义
-tools/      objdump、pack、调试辅助工具
+tools/      clover-as / clover-objdump
 scripts/    环境安装、工具检查、综合检查
-tests/      跨组件测试与回归
+tests/      ABI、M2 垂直切片与后续回归
 ```
 
 ## 工具链
@@ -60,6 +62,8 @@ tests/      跨组件测试与回归
 ./scripts/setup.sh          # 创建 .venv、安装 Python 依赖、检查工具
 ./scripts/check_tools.sh    # 打印版本并检查最低版本
 make smoke                  # 工具链最小闭环：Verilator + Icarus + cocotb + Yosys
+make tools                  # 构建 cloverc / clover-as / clover-iss / clover-objdump
+make m2-test                # 23 个汇编/C 程序的 ISS 端到端回归
 ```
 
 ## 设计文档
@@ -71,8 +75,30 @@ make smoke                  # 工具链最小闭环：Verilator + Icarus + cocot
 - [Clover C 编译器](docs/04-compiler.md)
 - [验证与工具链](docs/05-verification.md)
 - [路线图](docs/06-roadmap.md)
+- [M2 软件垂直切片状态](docs/07-m2-status.md)
 
-## 一个最小 kernel 的样子
+## 现在就能跑的 C
+
+```c
+int fib(int n)
+{
+    if (n < 2)
+        return n;
+    return fib(n - 1) + fib(n - 2);
+}
+
+int main(void)
+{
+    return fib(10);   /* ISS 退出码 55 */
+}
+```
+
+```bash
+build/cmake/bin/cloverc fib.c -o fib.bin --asm fib.s
+build/cmake/bin/clover-iss --image fib.bin --dump-regs
+```
+
+## 目标 kernel 的形态（M4/M5）
 
 ```c
 #include <clover/clover_tile.h>
@@ -80,10 +106,12 @@ make smoke                  # 工具链最小闭环：Verilator + Icarus + cocot
 /* C[16x16] += A[16x16] * B[16x16], FP16 输入，FP32 累加 */
 void gemm_block(const clover_mma_desc *d)
 {
-    __clover_mma(d);
-    __clover_wait(CLOVER_WAIT_MMA);
+    __clover_mma(d);                 /* TILE.MMA */
+    __clover_wait(CLOVER_WAIT_MMA);  /* TILE.WAIT */
 }
 ```
+
+> 当前编译器还没有预处理器与 struct 支持，这段 kernel 是 M4/M5 的目标形态；M2 先用无头文件的整数 C 打通执行链路。
 
 真正的 GEMM 由 C 循环遍历 M/N/K block，并在 K 方向设置 `accumulate`，不是硬件固化算子。
 

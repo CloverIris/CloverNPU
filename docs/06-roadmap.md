@@ -11,7 +11,7 @@
 
 **验收**：`make smoke` 退出码 0；`scripts/check_tools.sh` 全部通过。
 
-## M1 · 设计基线与 ABI（当前）
+## M1 · 设计基线与 ABI（已完成）
 
 - 冻结架构、ISA、ABI、编译器、验证规范。
 - 冻结描述符/命令/kernel args/CLOV 布局。
@@ -27,20 +27,28 @@
 
 ## M2 · 标量核 + ISS + 汇编器 + 最小 C 编译器
 
-目标：**让一段整数 C 程序在 ISS 上跑出正确结果。**
+目标：**让一段整数 C 程序在 ISS 上跑出正确结果，再让同一程序在 RTL 核上复现。**
 
-- Clover-S RTL：regfile、ALU、decoder、branch、LSU、CSR、trap、5 级流水。
-- `clover-iss`：指令级模拟器，支持内存/CSR/trap/trace。
-- `clover-as`：两遍汇编器，ELF32 `.o`。
-- `cloverc` 最小前端：`int`、局部变量、算术、if/while/for、函数调用、`return`。
-- 测试：随机指令差分（ISS vs RTL）、C 程序差分（host clang vs cloverc）。
-- 无 cache（先直连 scratchpad/DRAM 模型）。
+### M2a · 软件垂直切片（已完成，2026-10-18）
+
+- Clover-S ISA 编码/解码/反汇编。
+- `clover-as`：两遍汇编器、标签、伪指令、flat image。
+- `clover-iss`：32 位顺序执行、CSR、trap、syscall、内存映射、trace。
+- `cloverc`：`int/char/short/long`、指针、数组、全局变量、函数/递归、if/while/for/do、break/continue、字符串、内建 syscall。
+- 23 个端到端测试（汇编 3 + C 19 + 负例 1），见 [M2 状态](07-m2-status.md)。
+- `clover-objdump` 可反汇编并标注符号。
+
+### M2b · RTL 标量核（下一步）
+
+- `clover_pkg.sv`、regfile、ALU、decoder、branch、LSU、CSR、trap、5 级流水。
+- 先做 stall-only hazard，不做 forwarding；cache 暂不接入。
+- 与 ISS 做随机指令差分。
 
 **验收**：
 
-- `fib(20)`、排序、矩阵索引等 20+ 程序在 ISS 上正确。
+- `fib(10)`、排序、矩阵索引等 20+ 程序在 ISS 与 RTL 上一致。
 - 随机 10 万条整数指令，RTL 与 ISS 终态一致。
-- `clover-objdump` 能反汇编自身输出。
+- Yosys `read/proc/check` 通过。
 
 ## M3 · 存储、总线、DMA、命令队列
 

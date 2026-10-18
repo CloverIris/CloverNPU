@@ -1,6 +1,8 @@
 # 04 · Clover C 编译器
 
-`cloverc` 是 CloverNPU 的自研 C 编译器，C++17 实现，不依赖 LLVM/GCC。它把**扩展 C99 子集**编译为 Clover-S 机器码，并生成 ELF32 目标文件与 CLOV 镜像。
+`cloverc` 是 CloverNPU 的自研 C 编译器，C++17 实现，不依赖 LLVM/GCC。它把**扩展 C99 子集**编译为 Clover-S 机器码。目标形态是 ELF32 + CLOV；**M2a 当前先输出 flat image**，ELF/CLOV 在 M5 接入。
+
+> **实现状态（M2a）**：已完成 lexer、parser、类型推断、帧布局、表达式/语句代码生成、全局变量、字符串、递归与 8 参数调用。尚未实现预处理器、`struct/union/enum/typedef`、`switch/goto`、`float/double`、初始化器列表、ELF/CLOV。当前可用子集与限制见 [M2 状态](07-m2-status.md)。
 
 目标不是替代 GCC，而是让 kernel 作者用熟悉的 C 语法表达：
 
