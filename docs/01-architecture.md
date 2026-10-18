@@ -14,6 +14,8 @@ CloverNPU 的核心判断是：**把“算子”留在软件，把“可复用�
 1. 编译器与 runtime 是主角，RTL 是可编程数据通路的载体。
 2. 性能不会接近商用量产 NPU；本项目追求的是**可解释、可验证、可扩展**。
 
+> **实现状态（M2b）**：标量核（ALU/regfile/decoder/5 级流水/CSR/trap）、汇编器、ISS、最小 C 编译器已完成，19 个 C 程序通过 ISS/RTL 差分。Scratchpad、cache、AXI、DMA、命令队列与 tile engine 尚未接入 RTL；当前 testbench 用直接映射的仿真内存。
+
 ## 2. 系统上下文
 
 ```mermaid

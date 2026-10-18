@@ -6,7 +6,7 @@ CMAKE_BUILD := $(BUILD)/cmake
 CC      ?= cc
 CXX     ?= c++
 
-.PHONY: help all check check-tools abi-check tools compiler m2-test smoke lint test synth clean venv
+.PHONY: help all check check-tools abi-check tools compiler m2-test rtl-lint rtl-synth rtl-core-test smoke lint test synth clean venv
 
 help:
 	@echo "CloverNPU targets:"
@@ -14,16 +14,19 @@ help:
 	@echo "  make abi-check    compile-time ABI layout assertions"
 	@echo "  make tools        build cloverc/clover-as/clover-iss/clover-objdump"
 	@echo "  make m2-test      run assembler/ISS/compiler vertical-slice tests"
+	@echo "  make rtl-lint     Verilator lint of the Clover-S core"
+	@echo "  make rtl-synth    Yosys read/proc/check of the Clover-S core"
+	@echo "  make rtl-core-test run the C programs on the RTL core"
 	@echo "  make smoke        L0 toolchain smoke (Verilator/Icarus/cocotb/Yosys)"
 	@echo "  make lint         Verilator lint of the smoke DUT"
 	@echo "  make test         run cocotb smoke test"
 	@echo "  make synth        Yosys read/proc/check of the smoke DUT"
-	@echo "  make check        check-tools + abi-check + smoke + m2-test"
+	@echo "  make check        all of the above"
 	@echo "  make clean        remove build artifacts"
 
 all: check
 
-check: check-tools abi-check smoke m2-test
+check: check-tools abi-check smoke m2-test rtl-lint rtl-synth rtl-core-test
 
 check-tools:
 	@./scripts/check_tools.sh
@@ -36,6 +39,20 @@ compiler: tools
 
 m2-test: tools
 	$(PY) tests/m2/run_tests.py
+
+rtl-lint:
+	verilator --lint-only -Wall -Wno-fatal \
+		--top-module clover_core \
+		-Irtl/common -Irtl/core rtl/core/clover_core.sv
+
+rtl-synth:
+	yosys -q -p "\
+		read_verilog -sv -Irtl/common -Irtl/core rtl/core/clover_core.sv; \
+		hierarchy -check -top clover_core; \
+		proc; opt; check -assert; stat"
+
+rtl-core-test: tools
+	$(PY) tests/rtl/run_core_tests.py
 
 abi-check:
 	@mkdir -p "$(BUILD)/abi"
@@ -67,9 +84,9 @@ venv:
 	.venv/bin/python -m pip install -q -r requirements.txt
 
 clean:
-	rm -rf "$(BUILD)/smoke" "$(BUILD)/abi" "$(CMAKE_BUILD)" "$(BUILD)/m2"
+	rm -rf "$(BUILD)/smoke" "$(BUILD)/abi" "$(CMAKE_BUILD)" "$(BUILD)/m2" "$(BUILD)/rtl"
 	rm -rf "$(BUILD)/host"
 	rm -rf "$(ROOT)/sim/smoke/__pycache__"
 	find "$(ROOT)/sim" -name '*.vvp' -delete
-	rm -f "$(ROOT)/sim/smoke/results.xml"
+	rm -f "$(ROOT)/sim/smoke/results.xml" "$(ROOT)/sim/rtl/results.xml"
 	@echo "cleaned build/smoke, build/abi and sim artifacts"

@@ -1,6 +1,6 @@
-# 07 · M2 软件垂直切片
+# 07 · M2 状态：软件垂直切片 + RTL 核
 
-**状态：M2a 已完成（2026-10-18）**。标量工具链已经能从 C 源码一路跑到 ISS 上的可执行结果；RTL 标量核（M2b）尚未开始。
+**状态：M2 已完成（2026-10-18）**。C 源码可以编译为 Clover-S、在 ISS 上执行，也可以在同一套 flat image 上跑 5 级 RTL 核；19 个 C 程序通过 ISS/RTL 差分。
 
 ## 1. 已实现
 
@@ -12,6 +12,12 @@
 | 编译器 | `compiler/src/compiler.cpp` | C 子集 → Clover-S 汇编 → flat image |
 | 驱动 | `compiler/tools/cloverc.cpp` | `-S`、`-o`、`--asm`、`--map`、`--no-start` |
 | 测试 | `tests/m2/run_tests.py` | 23 个正/负例，见 §6 |
+| RTL ALU | `rtl/core/clover_alu.sv` | 整数 ALU + MUL/MULH/MULHSU/MULHU/DIV/DIVU/REM/REMU |
+| RTL regfile | `rtl/core/clover_regfile.sv` | 32 x 32，x0 恒 0 |
+| RTL decoder | `rtl/core/clover_decoder.sv` | 标量 + TILE 指令译码，`ctrl_t` 控制束 |
+| RTL core | `rtl/core/clover_core.sv` | 5 级流水、forwarding、load-use/WB-ID hazard、CSR、trap、ecall/uart |
+| RTL TB | `sim/rtl/clover_core_tb.sv` | DRAM + scratchpad 仿真内存模型 |
+| RTL 测试 | `tests/rtl/run_core_tests.py` | 19 个 C 程序的 ISS/RTL 差分 |
 
 ## 2. 工具用法
 
@@ -24,6 +30,14 @@ build/cmake/bin/clover-objdump --map fib.map --length 64 fib.bin
 
 build/cmake/bin/clover-as sum.s -o sum.bin --map sum.map --listing sum.lst
 build/cmake/bin/clover-iss --image sum.bin --trace
+```
+
+RTL 核：
+
+```bash
+make rtl-lint                 # Verilator lint
+make rtl-synth                # Yosys read/proc/check
+make rtl-core-test            # 19 个 C 程序在 RTL 上复现
 ```
 
 ### `cloverc`
@@ -114,25 +128,30 @@ make tools
 make m2-test
 ```
 
-当前 23 个用例：
+当前 23 个 ISS 用例：
 
 - 汇编：`sum`、`hello`、`call/ret`。
 - C：加法、递归 Fibonacci、循环求和、字符串输出、全局/局部数组、全局变量、`char`、指针、局部数组指针、6 参数、逻辑短路、除法/取模、`while`、`do/while`、`break/continue`、函数原型、多维数组、大栈帧（600 元素数组）。
 - 负例：调用未定义函数必须编译失败。
 - 每个正例还会用 `clover-objdump` 检查入口符号。
 
+RTL 差分：上述 19 个 C 正例全部在 `clover_core_tb` 上复现，退出码与串口输出和 ISS 一致。`bigarray` 约 155k 周期，是当前最长的单测。
+
 ## 7. 已知限制
 
 - TILE 指令在 ISS 中目前是 no-op（`tile.wait` 返回 0）；tile engine 的功能模型在 M4 加入。
 - ISS 的 cache/MMIO 只是地址映射桩；没有时序。
-- `div/rem` 由 ISS 直接执行；RTL 核可以后续选择硬件或软件实现。
-- 没有 RTL 标量核，因此还没有 ISS vs RTL 差分。
+- `div/rem` 在 RTL 中是组合逻辑（`/`、`%`）；综合面积会较大，后续可换多周期除法器。
+- RTL 核没有 I-cache/D-cache、AXI、DMA、命令队列；testbench 用直接映射的仿真内存。
+- RTL 核的 CSR/trap 只覆盖 `mstatus/mtvec/mepc/mcause/mtval/mscratch/cycle/instret` 与非法指令/断点/ecall/misalign 的停机路径；完整异常向量留到 M3。
+- TILE 指令在 RTL/ISS 中都是 no-op（`tile.wait` 返回 0）。
 - 编译器没有预处理器，kernel 头文件还不能直接包含。
+- 尚未做随机指令差分；当前是 19 个定向 C 程序差分。
 
-## 8. 下一步（M2b）
+## 8. 下一步（M3）
 
-1. `rtl/common/clover_pkg.sv`：参数、dtype、地址映射、magic。
-2. `regfile`、`alu`、`decoder`、`lsu`、`csr`、`branch`、`mul_div`。
-3. 5 级流水 + stall-only hazard（先不做 forwarding），cocotb 单元测试。
-4. 用同一批 M2 程序做 **ISS vs RTL 差分**。
-5. 接入 Yosys `read/proc/check`。
+1. Scratchpad 256 KB、16 bank、2R1W、仲裁。
+2. I-cache/D-cache 与 AXI4/AXI4-Lite。
+3. DMA 2D、command processor、completion ring。
+4. `libclover` 仿真后端。
+5. 随机指令差分与 AXI protocol checker。

@@ -176,11 +176,14 @@ make lint            # Verilator lint
 make test            # cocotb smoke
 make synth           # Yosys check
 make tools           # 构建 cloverc/clover-as/clover-iss/clover-objdump
-make m2-test         # M2a 23 个汇编/C 端到端用例
+make m2-test         # 23 个汇编/C 的 ISS 端到端用例
+make rtl-lint        # Verilator lint of clover_core
+make rtl-synth       # Yosys read/proc/check of clover_core
+make rtl-core-test   # 19 个 C 程序的 ISS/RTL 差分
 make check           # 以上全部
 ```
 
-M2a 已完成；M2b 会增加 `make rtl-core-test` 与 ISS/RTL 差分。
+M2 已完成；M3 会加入 cache/AXI/DMA/命令队列与相应的协议检查。RTL 核的 testbench 使用直接映射的仿真内存，因此当前 RTL 测试不覆盖 AXI backpressure/cache 一致性。
 
 ## 9. 失败处理约定
 

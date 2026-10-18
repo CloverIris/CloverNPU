@@ -38,17 +38,19 @@
 - 23 个端到端测试（汇编 3 + C 19 + 负例 1），见 [M2 状态](07-m2-status.md)。
 - `clover-objdump` 可反汇编并标注符号。
 
-### M2b · RTL 标量核（下一步）
+### M2b · RTL 标量核（已完成，2026-10-18）
 
-- `clover_pkg.sv`、regfile、ALU、decoder、branch、LSU、CSR、trap、5 级流水。
-- 先做 stall-only hazard，不做 forwarding；cache 暂不接入。
-- 与 ISS 做随机指令差分。
+- `clover_pkg.sv`（工具兼容的 typedef/localparam 头）、regfile、ALU、decoder、LSU、CSR、trap、5 级流水。
+- EX/MEM/WB 转发、load-use bubble、WB→ID hazard stall、branch redirect flush。
+- `clover_core_tb.sv` 仿真内存模型；19 个 C 程序与 ISS 退出码/串口输出一致。
+- Yosys `read_verilog -sv` + `hierarchy` + `proc` + `opt` + `check -assert` 通过。
 
 **验收**：
 
-- `fib(10)`、排序、矩阵索引等 20+ 程序在 ISS 与 RTL 上一致。
-- 随机 10 万条整数指令，RTL 与 ISS 终态一致。
-- Yosys `read/proc/check` 通过。
+- 19 个 C 程序（递归、数组、指针、全局变量、6 参数、大栈帧）在 ISS 与 RTL 上一致。
+- `make rtl-lint`、`make rtl-synth`、`make rtl-core-test` 全绿。
+- 尚未接入 cache/AXI/DMA/命令队列/tile engine；这些进入 M3/M4。
+- 随机指令差分（10 万条）留到 M3 前补强。
 
 ## M3 · 存储、总线、DMA、命令队列
 

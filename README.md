@@ -2,7 +2,7 @@
 
 CloverNPU 是一个**面向研究与验证**的传统体制可编程 NPU。它不采用 GPGPU 的宽 SIMT/warp 模型，也不把卷积、ReLU 等算子做成硬连线宏；计算由标量控制核执行 C kernel，通过紧耦合的 tile 指令驱动可编程向量/矩阵引擎，配合 DMA、scratchpad 与显式片上缓存完成。
 
-> 当前状态：**M2a 软件垂直切片完成**。工具链、架构/ISA/ABI 规范、汇编器、ISS 和最小 C 编译器已可端到端运行；RTL 标量核（M2b）刚开始。
+> 当前状态：**M2b 完成**。工具链、架构/ISA/ABI 规范、汇编器、ISS、最小 C 编译器，以及可综合的 5 级 Clover-S RTL 核均可端到端运行；19 个 C 程序已通过 ISS/RTL 差分。
 
 ## 设计目标
 
@@ -17,7 +17,7 @@ CloverNPU 是一个**面向研究与验证**的传统体制可编程 NPU。它�
 
 | 项目 | 规格 |
 |---|---|
-| 标量核 | 自研 Clover-S，32 位定长指令，ILP32，5 级顺序流水 |
+| 标量核 | 自研 Clover-S，32 位定长指令，ILP32，5 级顺序流水（RTL + ISS） |
 | 矩阵引擎 | 16 x 16 MAC，单条 MMA 处理 M,N,K <= 16 的 block |
 | 向量引擎 | 16 lane，流式描述符驱动，N 由运行时给出 |
 | 数值 | FP16/BF16/FP8-E4M3/FP8-E5M2/FP4-E2M1 存储；FP32 计算/累加 |
@@ -64,6 +64,8 @@ tests/      ABI、M2 垂直切片与后续回归
 make smoke                  # 工具链最小闭环：Verilator + Icarus + cocotb + Yosys
 make tools                  # 构建 cloverc / clover-as / clover-iss / clover-objdump
 make m2-test                # 23 个汇编/C 程序的 ISS 端到端回归
+make rtl-core-test          # 19 个 C 程序在 5 级 RTL 核上复现
+make rtl-synth              # Yosys read/proc/check
 ```
 
 ## 设计文档
@@ -75,7 +77,7 @@ make m2-test                # 23 个汇编/C 程序的 ISS 端到端回归
 - [Clover C 编译器](docs/04-compiler.md)
 - [验证与工具链](docs/05-verification.md)
 - [路线图](docs/06-roadmap.md)
-- [M2 软件垂直切片状态](docs/07-m2-status.md)
+- [M2 状态（软件切片 + RTL 核）](docs/07-m2-status.md)
 
 ## 现在就能跑的 C
 
@@ -114,6 +116,18 @@ void gemm_block(const clover_mma_desc *d)
 > 当前编译器还没有预处理器与 struct 支持，这段 kernel 是 M4/M5 的目标形态；M2 先用无头文件的整数 C 打通执行链路。
 
 真正的 GEMM 由 C 循环遍历 M/N/K block，并在 K 方向设置 `accumulate`，不是硬件固化算子。
+
+## M2b 的 RTL 核
+
+- `rtl/common/clover_pkg.sv`：参数、opcode/ALU/branch/dtype 枚举、CSR 地址、`ctrl_t`。
+- `rtl/core/clover_alu.sv`：整数 ALU + 乘除。
+- `rtl/core/clover_regfile.sv`：32 x 32 寄存器堆，x0 恒 0。
+- `rtl/core/clover_decoder.sv`：完整标量指令 + TILE 指令译码。
+- `rtl/core/clover_core.sv`：5 级流水、EX/MEM/WB 转发、load-use/WB-ID hazard、CSR、trap、ecall/uart。
+- `sim/rtl/clover_core_tb.sv`：仿真内存模型（DRAM + scratchpad）。
+- `tests/rtl/run_core_tests.py`：19 个 C 程序的 ISS/RTL 差分。
+
+当前 RTL 核**尚未接入** I-cache/D-cache、AXI、DMA、命令队列与 tile engine；这些是 M3/M4。
 
 ## 非目标（v0.1）
 

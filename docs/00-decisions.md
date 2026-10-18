@@ -105,6 +105,13 @@
 - **理由**：先打通“C → 汇编 → ISS → 退出码”的最小闭环，避免在编译器尚未稳定时同时实现重定位/链接器/镜像打包。
 - **约束**：M5 必须实现 ELF32 重定位、`clover-ld` 与 `clover-pack`；flat image 只能作为调试格式保留。
 
+## D-015 RTL 公共定义不使用 SystemVerilog package
+
+- **状态**：确认（工具兼容性）
+- **决策**：`rtl/common/clover_pkg.sv` 是带 include guard 的编译单元级 typedef/localparam 头文件，不是 `package`。
+- **理由**：Yosys 0.69 的 SystemVerilog 前端不支持 `package`/`import`；Verilator 5.052 两者都支持。
+- **约束**：所有 RTL 模块通过 `` `include "clover_pkg.sv" `` 获取类型；不要改成 `package`，否则 Yosys 门禁失效。
+
 ## 待冻结（不阻塞当前实现）
 
 这些问题在进入对应里程碑前必须给出答案，当前先按默认值实现：
