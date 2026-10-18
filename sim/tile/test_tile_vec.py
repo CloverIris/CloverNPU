@@ -190,3 +190,64 @@ async def tile_vec_formats(dut):
     await run_format_vec(dut, 3, E4M3_CODE, 1)
     await run_format_vec(dut, 4, E5M2_CODE, 1)
     dut._log.info("VEC FP16/BF16/FP4/E4M3/E5M2 ADD passed")
+
+
+async def run_vec_scale(dut, a_scale, b_scale, post_scale):
+    count = 256
+    a_base, b_base, c_base = 0x10000, 0x20000, 0x30000
+    scale_base = 0x3E000
+    a = [float((i * 3) % 100) for i in range(count)]
+    b = [float((i * 7) % 100) for i in range(count)]
+    for line in range(16):
+        wa = [f32_bits(a[line * 16 + i]) for i in range(16)]
+        wb = [f32_bits(b[line * 16 + i]) for i in range(16)]
+        await write_line(dut, a_base + line * 64, pack_words(wa))
+        await write_line(dut, b_base + line * 64, pack_words(wb))
+        await write_line(dut, c_base + line * 64, 0)
+    await write_line(dut, scale_base,
+                     pack_words([f32_bits(a_scale), f32_bits(b_scale)] + [0] * 14))
+    desc = [
+        0x31434556, (1 << 14) | (1 << 15) | (1 << 18), count,
+        a_base, b_base, c_base, 4, 4, 4, 0, 0,
+        scale_base, scale_base + 4, f32_bits(post_scale), 0, 0,
+    ]
+    await write_line(dut, 0, pack_words(desc))
+    dut.desc_addr.value = 0
+    dut.start.value = 1
+    await RisingEdge(dut.clk)
+    dut.start.value = 0
+    for _ in range(10000):
+        await RisingEdge(dut.clk)
+        if int(dut.done.value):
+            break
+    else:
+        raise AssertionError("VEC scale timeout")
+    assert int(dut.error.value) == 0
+    result = []
+    for line in range(16):
+        value = await read_line(dut, c_base + line * 64)
+        result.extend(f32((value >> (32 * i)) & 0xFFFFFFFF) for i in range(16))
+    for i in range(count):
+        expected = np.float32(np.float32(a[i] * a_scale) +
+                              np.float32(b[i] * b_scale))
+        expected = np.float32(expected * np.float32(post_scale))
+        assert result[i] == expected, f"scale vec {i}: {result[i]} != {expected}"
+
+
+@cocotb.test()
+async def tile_vec_scale(dut):
+    cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+    dut.host_we.value = 0
+    dut.host_addr.value = 0
+    dut.host_wdata.value = 0
+    dut.host_be.value = 0
+    dut.start.value = 0
+    dut.desc_addr.value = 0
+    dut.rst_n.value = 0
+    for _ in range(3):
+        await RisingEdge(dut.clk)
+    dut.rst_n.value = 1
+    await RisingEdge(dut.clk)
+    await run_vec_scale(dut, 2.0, 0.5, 1.5)
+    await run_vec_scale(dut, 1.0, 1.0, 1.0)
+    dut._log.info("VEC per-tensor scale + post_scale passed")

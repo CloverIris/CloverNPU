@@ -52,7 +52,7 @@ PASS npu_rtl_graph
 ## 4. 已知限制
 
 - VEC 只支持 FP32；MMA 已支持 FP4–FP16。
-- VEC 已应用 `post_scale`；FMA 使用 `post_bias`；A/B per-tensor/per-channel scale 未实现。
+- VEC 已应用 per-tensor A/B scale 与 `post_scale`；FMA 使用 `post_bias`；per-channel scale 未实现。
 - 图是“两个 RUN 命令”的固定序列，不是通用 JSON/CLOV 图解析。
 - 两个 kernel 的 code 必须手工放在不同 scratchpad 地址（gemm 0，add 0x1000）。
 - 没有自动中间 buffer、形状推断或图优化；这些仍在 `libclover` ISS 后端。
@@ -61,8 +61,8 @@ PASS npu_rtl_graph
 
 ## 5. 下一步
 
-1. VEC 低精度输出（FP16/BF16/FP8/FP4）。
-2. A/B per-tensor/per-channel scale 与 MMA post ops。
+1. VEC/MMA 低精度 C 输出（FP16/BF16/FP8/FP4）。
+2. per-channel scale 与完整 post ops。
 3. 图 runtime 的 RTL/Verilator 后端（复用同一 CP 队列）。
 4. CLOV/manifest：把 entry symbol、tensor 描述、code/data 段打包。
 5. 编译器 `struct/#include/aligned(64)`，直接包含 `clover_tile.h`。

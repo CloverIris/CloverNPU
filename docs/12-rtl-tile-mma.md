@@ -56,7 +56,7 @@ PASS tile_mma
 
 ## 5. 下一步
 
-1. VEC 的 FP16/BF16/FP8/FP4 路径。
-2. per-tensor/per-channel scale 的 RTL。
-3. 图 runtime 的 RTL/Verilator 后端。
-4. CLOV/manifest 与编译器 `struct/#include`。
+1. per-channel scale 与低精度 C 输出。
+2. 图 runtime 的 RTL/Verilator 后端。
+3. CLOV/manifest 与编译器 `struct/#include`。
+4. 多 shape/scale 的 RTL 回归扩展。

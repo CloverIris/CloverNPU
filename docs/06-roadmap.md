@@ -131,7 +131,12 @@
 - VEC 输入支持 FP4–FP16；post_scale 与 FMA post_bias 已实现。
 - VEC 输出仍 FP32；A/B scale 与低精度 C 输出下一步。
 
-#### M4g · scale、低精度 C 与 RTL 图后端（下一步）
+#### M4g · per-tensor scale（部分完成，2026-10-18）
+
+- MMA/VEC 支持 per-tensor A/B scale 与 post_scale；MMA 支持 post_bias。
+- 仍有 per-channel scale、低精度 C 输出与 RTL 图后端。
+
+#### M4h · per-channel scale、低精度 C 与 RTL 图后端（下一步）
 
 目标：**描述符驱动的 MMA/VEC/CVT/REDUCE 在 RTL 上正确。**
 

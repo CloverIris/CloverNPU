@@ -32,6 +32,7 @@ module clover_tile_vec (
     localparam logic [2:0] ST_FETCH = 3'd1;
     localparam logic [2:0] ST_CHECK = 3'd2;
     localparam logic [2:0] ST_LOOP  = 3'd3;
+    localparam logic [2:0] ST_SCALE = 3'd4;
 
     logic [2:0]  state;
     logic [31:0] d[0:15];
@@ -42,8 +43,9 @@ module clover_tile_vec (
     logic [31:0] a_base, b_base, c_base;
     logic [31:0] a_stride, b_stride, c_stride;
     logic [3:0]  op;
-    logic        relu;
+    logic        relu, a_scale_en, b_scale_en;
     logic [2:0]  src_type, dst_type;
+    logic [31:0] a_scale_q, b_scale_q;
     logic        busy_q, done_q, error_q;
     logic [3:0]  error_code_q;
     logic [31:0] a_element_addr, b_element_addr, c_element_addr;
@@ -51,7 +53,7 @@ module clover_tile_vec (
     logic [1:0]  a_byte_off, b_byte_off;
     logic [2:0]  a_size, b_size;
     logic [31:0] a_raw, b_raw;
-    logic [31:0] a_f32, b_f32, result;
+    logic [31:0] a_f32, b_f32, a_scaled, b_scaled, result;
 
     assign busy = busy_q;
     assign done = done_q;
@@ -96,23 +98,47 @@ module clover_tile_vec (
         default: b_f32 = 32'd0;
         endcase
 
-        result = a_f32;
+        a_scaled = clover_fp32_mul(a_f32, a_scale_q);
+        b_scaled = clover_fp32_mul(b_f32, b_scale_q);
+        result = a_scaled;
         case (op)
-        4'd0: result = clover_fp32_add(a_f32, b_f32);
-        4'd1: result = clover_fp32_add(a_f32, {~b_f32[31], b_f32[30:0]});
-        4'd2: result = clover_fp32_mul(a_f32, b_f32);
-        4'd3: result = (a_f32[31] == 0 && b_f32[31] == 1) ? a_f32 :
-                       (a_f32[31] == 1 && b_f32[31] == 0) ? b_f32 :
-                       (a_f32 > b_f32) ? a_f32 : b_f32;
-        4'd4: result = (a_f32[31] == 0 && b_f32[31] == 1) ? b_f32 :
-                       (a_f32[31] == 1 && b_f32[31] == 0) ? a_f32 :
-                       (a_f32 < b_f32) ? a_f32 : b_f32;
-        4'd5: result = a_f32[31] ? 32'd0 : a_f32;
-        4'd6: result = {1'b0, a_f32[30:0]};
-        4'd7: result = {~a_f32[31], a_f32[30:0]};
-        4'd8: result = clover_fp32_add(clover_fp32_mul(a_f32, b_f32),
-                                       d[14]);
-        4'd9: result = a_f32;
+        4'd0: result = clover_fp32_add(a_scaled,
+                                       b_scaled);
+        4'd1: result = clover_fp32_add(a_scaled,
+                                       {~b_scaled[31],
+                                         b_scaled[30:0]});
+        4'd2: result = clover_fp32_mul(a_scaled,
+                                       b_scaled);
+        4'd3: result = (a_scaled[31] == 0 &&
+                        b_scaled[31] == 1) ?
+                       a_scaled :
+                       (a_scaled[31] == 1 &&
+                        b_scaled[31] == 0) ?
+                       b_scaled :
+                       (a_scaled >
+                        b_scaled) ?
+                       a_scaled :
+                       b_scaled;
+        4'd4: result = (a_scaled[31] == 0 &&
+                        b_scaled[31] == 1) ?
+                       b_scaled :
+                       (a_scaled[31] == 1 &&
+                        b_scaled[31] == 0) ?
+                       a_scaled :
+                       (a_scaled <
+                        b_scaled) ?
+                       a_scaled :
+                       b_scaled;
+        4'd5: result = (a_scaled[31]) ? 32'd0 :
+                       a_scaled;
+        4'd6: result = {1'b0, a_scaled[30:0]};
+        4'd7: result = {~a_scaled[31],
+                        a_scaled[30:0]};
+        4'd8: result = clover_fp32_add(
+                           clover_fp32_mul(a_scaled,
+                                           b_scaled),
+                           d[14]);
+        4'd9: result = a_scaled;
         default: result = a_f32;
         endcase
         result = clover_fp32_mul(result, d[13]);
@@ -132,6 +158,16 @@ module clover_tile_vec (
         ST_FETCH: begin
             a_req = 1'b1;
             a_addr = {desc_addr_q[17:6], 6'b0};
+        end
+        ST_SCALE: begin
+            if (a_scale_en) begin
+                a_req = 1'b1;
+                a_addr = {d[11][17:6], 6'b0};
+            end
+            if (b_scale_en) begin
+                b_req = 1'b1;
+                b_addr = {d[12][17:6], 6'b0};
+            end
         end
         ST_LOOP: begin
             a_req = 1'b1;
@@ -161,6 +197,8 @@ module clover_tile_vec (
             desc_addr_q  <= 32'd0;
             i            <= 32'd0;
             count        <= 32'd0;
+            a_scale_q    <= 32'h3F80_0000;
+            b_scale_q    <= 32'h3F80_0000;
             for (int n = 0; n < 16; n++) d[n] <= 32'd0;
         end else begin
             done_q <= 1'b0;
@@ -196,6 +234,8 @@ module clover_tile_vec (
                 b_size     = a_size;
                 op         = d[1][3:0];
                 relu       = d[1][5];
+                a_scale_en = d[1][14];
+                b_scale_en = d[1][15];
                 if (d[0] != 32'h3143_4556) begin
                     error_q      <= 1'b1;
                     error_code_q <= 4'd1;
@@ -217,8 +257,15 @@ module clover_tile_vec (
                     state        <= ST_IDLE;
                 end else begin
                     i     <= 32'd0;
-                    state <= ST_LOOP;
+                    state <= (a_scale_en || b_scale_en) ? ST_SCALE : ST_LOOP;
                 end
+            end
+            ST_SCALE: begin
+                a_scale_q <= a_scale_en ?
+                    a_rdata[32 * d[11][5:2] +: 32] : 32'h3F80_0000;
+                b_scale_q <= b_scale_en ?
+                    b_rdata[32 * d[12][5:2] +: 32] : 32'h3F800000;
+                state <= ST_LOOP;
             end
             ST_LOOP: begin
                 if (w_ready) begin

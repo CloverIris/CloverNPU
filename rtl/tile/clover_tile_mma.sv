@@ -35,11 +35,12 @@ module clover_tile_mma (
     localparam logic [2:0] ST_IDLE   = 3'd0;
     localparam logic [2:0] ST_FETCH  = 3'd1;
     localparam logic [2:0] ST_CHECK  = 3'd2;
-    localparam logic [2:0] ST_LOAD_C = 3'd3;
-    localparam logic [2:0] ST_MMA    = 3'd4;
-    localparam logic [2:0] ST_WRITE  = 3'd5;
-    localparam logic [2:0] ST_DONE   = 3'd6;
-    localparam logic [2:0] ST_ERROR  = 3'd7;
+    localparam logic [2:0] ST_SCALE  = 3'd3;
+    localparam logic [2:0] ST_LOAD_C = 3'd4;
+    localparam logic [2:0] ST_MMA    = 3'd5;
+    localparam logic [2:0] ST_WRITE  = 3'd6;
+    localparam logic [2:0] ST_DONE   = 3'd7;
+    localparam logic [2:0] ST_ERROR  = 3'd0;
 
     logic [2:0]  state;
     logic [31:0] d[0:15];
@@ -53,8 +54,11 @@ module clover_tile_mma (
     logic [31:0] a_base, b_base, c_base;
     logic [31:0] a_stride, b_stride, c_stride;
     logic        accumulate, transpose_a, transpose_b, relu;
+    logic        a_scale_en, b_scale_en, a_per_channel, b_per_channel;
+    logic        post_scale_en, post_bias_en;
     logic [2:0]  a_type, b_type, c_type;
     logic [31:0] flags;
+    logic [31:0] a_scale_q, b_scale_q, post_value;
 
     logic [31:0] a_element_addr, b_element_addr, c_element_addr;
     logic [31:0] a_word, b_word, c_word;
@@ -124,13 +128,19 @@ module clover_tile_mma (
         3'd5: b_f32 = clover_fp4_to_fp32(b_raw[3:0]);
         default: b_f32 = 32'd0;
         endcase
-        prod = clover_fp32_mul(a_f32, b_f32);
+        prod = clover_fp32_mul(clover_fp32_mul(a_f32, a_scale_q),
+                               clover_fp32_mul(b_f32, b_scale_q));
         acc_next = clover_fp32_add(acc, prod);
 
-        if (relu && acc[31])
+        post_value = acc;
+        if (post_scale_en)
+            post_value = clover_fp32_mul(post_value, d[13]);
+        if (post_bias_en)
+            post_value = clover_fp32_add(post_value, d[14]);
+        if (relu && post_value[31])
             c_write = 32'd0;
         else
-            c_write = acc;
+            c_write = post_value;
     end
 
     always_comb begin
@@ -167,6 +177,16 @@ module clover_tile_mma (
             a_req  = 1'b1;
             a_addr = {desc_addr_q[17:6], 6'b0};
         end
+        ST_SCALE: begin
+            if (a_scale_en) begin
+                a_req  = 1'b1;
+                a_addr = {d[11][17:6], 6'b0};
+            end
+            if (b_scale_en) begin
+                b_req  = 1'b1;
+                b_addr = {d[12][17:6], 6'b0};
+            end
+        end
         ST_LOAD_C: begin
             if (accumulate) begin
                 b_req  = 1'b1;
@@ -200,6 +220,8 @@ module clover_tile_mma (
             error_code_q <= 4'd0;
             fetch_index  <= 4'd0;
             desc_addr_q  <= 32'd0;
+            a_scale_q    <= 32'h3F80_0000;
+            b_scale_q    <= 32'h3F80_0000;
             mi <= 5'd0;
             ni <= 5'd0;
             ki <= 5'd0;
@@ -243,6 +265,12 @@ module clover_tile_mma (
                 transpose_a= flags[1];
                 transpose_b= flags[2];
                 relu       = flags[3];
+                a_scale_en = flags[14];
+                b_scale_en = flags[15];
+                a_per_channel = flags[16];
+                b_per_channel = flags[17];
+                post_scale_en = flags[18];
+                post_bias_en  = flags[19];
                 a_type     = flags[7:5];
                 b_type     = flags[10:8];
                 c_type     = flags[13:11];
@@ -263,7 +291,8 @@ module clover_tile_mma (
                     done_q       <= 1'b1;
                     state        <= ST_IDLE;
                 end else if ((a_type > 3'd5) || (b_type > 3'd5) ||
-                             (c_type != 3'd0) || (a_size == 0) || (b_size == 0)) begin
+                             (c_type != 3'd0) || (a_size == 0) || (b_size == 0) ||
+                             a_per_channel || b_per_channel) begin
                     error_q      <= 1'b1;
                     error_code_q <= 4'd3;
                     busy_q       <= 1'b0;
@@ -273,8 +302,16 @@ module clover_tile_mma (
                     mi <= 5'd0;
                     ni <= 5'd0;
                     ki <= 5'd0;
-                    state <= ST_LOAD_C;
+                    state <= (a_scale_en || b_scale_en) ? ST_SCALE : ST_LOAD_C;
                 end
+            end
+
+            ST_SCALE: begin
+                a_scale_q <= a_scale_en ?
+                    a_rdata[32 * d[11][5:2] +: 32] : 32'h3F80_0000;
+                b_scale_q <= b_scale_en ?
+                    b_rdata[32 * d[12][5:2] +: 32] : 32'h3F80_0000;
+                state <= ST_LOAD_C;
             end
 
             ST_LOAD_C: begin

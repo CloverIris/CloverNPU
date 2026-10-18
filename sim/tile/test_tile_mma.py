@@ -235,3 +235,88 @@ async def tile_mma_formats(dut):
     await run_format_case(dut, 5, 5, FP4_CODE, 1)
     await run_format_case(dut, 4, 4, E5M2_CODE, 1)
     dut._log.info("MMA FP4/E4M3/E5M2 formats passed")
+
+
+async def run_scale_case(dut, a_scale, b_scale, post_scale, post_bias):
+    a_base, b_base, c_base = 0x10000, 0x20000, 0x30000
+    scale_base = 0x3E000
+    a_vals = [[(mi * 7 + ki * 3) % 16 for ki in range(16)] for mi in range(16)]
+    b_vals = [[(ki * 5 + ni * 2) % 16 for ni in range(16)] for ki in range(16)]
+
+    for line in range(8):
+        words = []
+        for word_i in range(16):
+            e0 = line * 32 + word_i * 2
+            e1 = e0 + 1
+            m0, k0 = divmod(e0, 16)
+            m1, k1 = divmod(e1, 16)
+            words.append(f16_bits(a_vals[m0][k0]) | (f16_bits(a_vals[m1][k1]) << 16))
+        await host_write_line(dut, a_base + line * 64, pack_words(words))
+
+    for line in range(8):
+        words = []
+        for word_i in range(16):
+            e0 = line * 32 + word_i * 2
+            e1 = e0 + 1
+            k0, n0 = divmod(e0, 16)
+            k1, n1 = divmod(e1, 16)
+            words.append(f16_bits(b_vals[k0][n0]) | (f16_bits(b_vals[k1][n1]) << 16))
+        await host_write_line(dut, b_base + line * 64, pack_words(words))
+
+    for line in range(16):
+        await host_write_line(dut, c_base + line * 64, 0)
+    await host_write_line(dut, scale_base,
+                          pack_words([f32_bits(a_scale), f32_bits(b_scale)] + [0] * 14))
+
+    desc = [
+        0x31414D4D,
+        (1 << 5) | (1 << 8) | (1 << 4) | (1 << 14) | (1 << 15) |
+        (1 << 18) | (1 << 19),
+        16, 16, 16, a_base, b_base, c_base,
+        32, 32, 64,
+        scale_base, scale_base + 4,
+        f32_bits(post_scale), f32_bits(post_bias), 0,
+    ]
+    await host_write_line(dut, 0, pack_words(desc))
+    dut.desc_addr.value = 0
+    dut.start.value = 1
+    await RisingEdge(dut.clk)
+    dut.start.value = 0
+    for _ in range(200000):
+        await RisingEdge(dut.clk)
+        if int(dut.done.value):
+            break
+    else:
+        raise AssertionError("scale MMA timeout")
+    assert int(dut.error.value) == 0, f"scale MMA error {int(dut.error_code.value)}"
+
+    result = []
+    for line in range(16):
+        value = await host_read_line(dut, c_base + line * 64)
+        result.extend(f32(word) for word in unpack_words(value))
+    for mi in range(16):
+        for ni in range(16):
+            base = sum(a_vals[mi][ki] * b_vals[ki][ni] for ki in range(16))
+            expected = base * a_scale * b_scale * post_scale + post_bias
+            got = result[mi * 16 + ni]
+            assert got == expected, f"scale C[{mi},{ni}] {got} != {expected}"
+
+
+@cocotb.test()
+async def tile_mma_scale(dut):
+    cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+    dut.host_we.value = 0
+    dut.host_addr.value = 0
+    dut.host_wdata.value = 0
+    dut.host_be.value = 0
+    dut.start.value = 0
+    dut.desc_addr.value = 0
+    dut.rst_n.value = 0
+    for _ in range(3):
+        await RisingEdge(dut.clk)
+    dut.rst_n.value = 1
+    await RisingEdge(dut.clk)
+
+    await run_scale_case(dut, 2.0, 0.5, 2.0, 1.0)
+    await run_scale_case(dut, 1.0, 1.0, 1.0, 0.0)
+    dut._log.info("MMA per-tensor scale + post scale/bias passed")
