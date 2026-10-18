@@ -52,7 +52,7 @@ PASS npu_rtl_graph
 ## 4. 已知限制
 
 - VEC 只支持 FP32；MMA 已支持 FP4–FP16。
-- VEC 已应用 per-tensor A/B scale 与 `post_scale`；FMA 使用 `post_bias`；per-channel scale 未实现。
+- VEC 已应用 per-tensor A/B scale 与 `post_scale`；MMA 支持 per-channel scale；VEC per-channel 未实现。
 - 图是“两个 RUN 命令”的固定序列，不是通用 JSON/CLOV 图解析。
 - 两个 kernel 的 code 必须手工放在不同 scratchpad 地址（gemm 0，add 0x1000）。
 - 没有自动中间 buffer、形状推断或图优化；这些仍在 `libclover` ISS 后端。

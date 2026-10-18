@@ -136,7 +136,12 @@
 - MMA/VEC 支持 per-tensor A/B scale 与 post_scale；MMA 支持 post_bias。
 - 仍有 per-channel scale、低精度 C 输出与 RTL 图后端。
 
-#### M4h · per-channel scale、低精度 C 与 RTL 图后端（下一步）
+#### M4h · per-channel scale（部分完成，2026-10-18）
+
+- MMA per-channel A/B scale 已实现并通过 16×16×16 测试。
+- VEC per-channel、低精度 C、RTL 图后端仍待做。
+
+#### M4i · 低精度 C 与 RTL 图后端（下一步）
 
 目标：**描述符驱动的 MMA/VEC/CVT/REDUCE 在 RTL 上正确。**
 

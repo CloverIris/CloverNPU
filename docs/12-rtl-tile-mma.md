@@ -56,7 +56,7 @@ PASS tile_mma
 
 ## 5. 下一步
 
-1. per-channel scale 与低精度 C 输出。
-2. 图 runtime 的 RTL/Verilator 后端。
-3. CLOV/manifest 与编译器 `struct/#include`。
-4. 多 shape/scale 的 RTL 回归扩展。
+1. 低精度 C 输出与完整 post ops。
+2. VEC per-channel scale。
+3. 图 runtime 的 RTL/Verilator 后端。
+4. CLOV/manifest 与编译器 `struct/#include`。

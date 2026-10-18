@@ -2,7 +2,7 @@
 
 CloverNPU 是一个**面向研究与验证**的传统体制可编程 NPU。它不采用 GPGPU 的宽 SIMT/warp 模型，也不把卷积、ReLU 等算子做成硬连线宏；计算由标量控制核执行 C kernel，通过紧耦合的 tile 指令驱动可编程向量/矩阵引擎，配合 DMA、scratchpad 与显式片上缓存完成。
 
-> 当前状态：**M4f + M4g-scale + M6a 完成**。RTL MMA/VEC 支持 FP4–FP16 输入、per-tensor scale 与 post_scale；GEMM 16×16×16/17×19×23 与 `GEMM → VEC ADD` 图都通过。主机图 runtime 仍走 ISS；低精度 C、per-channel scale、RTL 图后端与 CLOV 是下一段。
+> 当前状态：**M4g + M4h-partial + M6a 完成**。RTL MMA/VEC 支持 FP4–FP16 输入；MMA 支持 per-tensor/per-channel scale 与 post_scale，VEC 支持 per-tensor scale。GEMM 16×16×16/17×19×23 与 `GEMM → VEC ADD` 图都通过。主机图 runtime 仍走 ISS；低精度 C、RTL 图后端与 CLOV 是下一段。
 
 ## 设计目标
 
@@ -75,7 +75,7 @@ make rtl-graph-test         # RTL GEMM -> VEC ADD two-node graph
 make rtl-mem-synth          # Yosys check of the M3/M4a blocks
 ```
 
-RTL GEMM 回归覆盖 `16x16x16` 与 `17x19x23`；MMA/VEC 输入格式覆盖 FP4/E4M3/E5M2/FP16/BF16，并支持 per-tensor scale/post_scale，C 输出仍为 FP32。
+RTL GEMM 回归覆盖 `16x16x16` 与 `17x19x23`；MMA/VEC 输入格式覆盖 FP4/E4M3/E5M2/FP16/BF16；MMA 支持 per-tensor/per-channel scale，C 输出仍为 FP32。
 
 ## 设计文档
 

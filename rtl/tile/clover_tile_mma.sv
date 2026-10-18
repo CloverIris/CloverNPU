@@ -39,8 +39,7 @@ module clover_tile_mma (
     localparam logic [2:0] ST_LOAD_C = 3'd4;
     localparam logic [2:0] ST_MMA    = 3'd5;
     localparam logic [2:0] ST_WRITE  = 3'd6;
-    localparam logic [2:0] ST_DONE   = 3'd7;
-    localparam logic [2:0] ST_ERROR  = 3'd0;
+    localparam logic [2:0] ST_CH_SCALE = 3'd7;
 
     logic [2:0]  state;
     logic [31:0] d[0:15];
@@ -59,6 +58,7 @@ module clover_tile_mma (
     logic [2:0]  a_type, b_type, c_type;
     logic [31:0] flags;
     logic [31:0] a_scale_q, b_scale_q, post_value;
+    logic [31:0] a_ch_addr, b_ch_addr;
 
     logic [31:0] a_element_addr, b_element_addr, c_element_addr;
     logic [31:0] a_word, b_word, c_word;
@@ -160,6 +160,8 @@ module clover_tile_mma (
 
         // C element address (FP32).
         c_element_addr = c_base + mi * c_stride + ni * 4;
+        a_ch_addr = d[11] + mi * 4;
+        b_ch_addr = d[12] + ni * 4;
     end
 
     always_comb begin
@@ -191,6 +193,16 @@ module clover_tile_mma (
             if (accumulate) begin
                 b_req  = 1'b1;
                 b_addr = {c_element_addr[17:6], 6'b0};
+            end
+        end
+        ST_CH_SCALE: begin
+            if (a_per_channel) begin
+                a_req  = 1'b1;
+                a_addr = {a_ch_addr[17:6], 6'b0};
+            end
+            if (b_per_channel) begin
+                b_req  = 1'b1;
+                b_addr = {b_ch_addr[17:6], 6'b0};
             end
         end
         ST_MMA: begin
@@ -292,7 +304,8 @@ module clover_tile_mma (
                     state        <= ST_IDLE;
                 end else if ((a_type > 3'd5) || (b_type > 3'd5) ||
                              (c_type != 3'd0) || (a_size == 0) || (b_size == 0) ||
-                             a_per_channel || b_per_channel) begin
+                             (a_per_channel && !a_scale_en) ||
+                             (b_per_channel && !b_scale_en)) begin
                     error_q      <= 1'b1;
                     error_code_q <= 4'd3;
                     busy_q       <= 1'b0;
@@ -302,7 +315,8 @@ module clover_tile_mma (
                     mi <= 5'd0;
                     ni <= 5'd0;
                     ki <= 5'd0;
-                    state <= (a_scale_en || b_scale_en) ? ST_SCALE : ST_LOAD_C;
+                    state <= (a_per_channel || b_per_channel) ? ST_LOAD_C :
+                             ((a_scale_en || b_scale_en) ? ST_SCALE : ST_LOAD_C);
                 end
             end
 
@@ -319,6 +333,14 @@ module clover_tile_mma (
                     acc <= c_word;
                 else
                     acc <= 32'd0;
+                state <= (a_per_channel || b_per_channel) ? ST_CH_SCALE : ST_MMA;
+            end
+
+            ST_CH_SCALE: begin
+                if (a_per_channel)
+                    a_scale_q <= a_rdata[32 * a_ch_addr[5:2] +: 32];
+                if (b_per_channel)
+                    b_scale_q <= b_rdata[32 * b_ch_addr[5:2] +: 32];
                 state <= ST_MMA;
             end
 
