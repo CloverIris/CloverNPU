@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-labelledby="title desc">
+  <title id="title">CloverNPU</title>
+  <desc id="desc">A light blue chip containing a four-tile compute grid.</desc>
+  <rect width="240" height="240" rx="48" fill="#FFFFFF"/>
+  <g fill="#9BD2F1">
+    <rect x="74" y="20" width="12" height="25" rx="6"/>
+    <rect x="114" y="20" width="12" height="25" rx="6"/>
+    <rect x="154" y="20" width="12" height="25" rx="6"/>
+    <rect x="74" y="195" width="12" height="25" rx="6"/>
+    <rect x="114" y="195" width="12" height="25" rx="6"/>
+    <rect x="154" y="195" width="12" height="25" rx="6"/>
+    <rect x="20" y="74" width="25" height="12" rx="6"/>
+    <rect x="20" y="114" width="25" height="12" rx="6"/>
+    <rect x="20" y="154" width="25" height="12" rx="6"/>
+    <rect x="195" y="74" width="25" height="12" rx="6"/>
+    <rect x="195" y="114" width="25" height="12" rx="6"/>
+    <rect x="195" y="154" width="25" height="12" rx="6"/>
+  </g>
+  <rect x="43" y="43" width="154" height="154" rx="38" fill="#EFF8FE" stroke="#B9DFF6" stroke-width="4"/>
+  <rect x="63" y="63" width="114" height="114" rx="27" fill="#FFFFFF" stroke="#78BCE7" stroke-width="4"/>
+  <g>
+    <rect x="81" y="81" width="34" height="34" rx="13" fill="#CDEBFA"/>
+    <rect x="125" y="81" width="34" height="34" rx="13" fill="#A9D9F3"/>
+    <rect x="81" y="125" width="34" height="34" rx="13" fill="#A9D9F3"/>
+    <rect x="125" y="125" width="34" height="34" rx="13" fill="#CDEBFA"/>
+    <circle cx="120" cy="120" r="9" fill="#438FBE"/>
+  </g>
+</svg>

@@ -1,5 +1,9 @@
 # CloverNPU
 
+<p align="center">
+    <img src="assets/clovernpu-logo.svg" width="160" alt="CloverNPU tile accelerator logo">
+</p>
+
 **面向研究与验证的可编程 NPU 原型**
 
 [![GitHub repository](https://img.shields.io/badge/GitHub-CloverIris%2FCloverNPU-181717?logo=github)](https://github.com/CloverIris/CloverNPU)
