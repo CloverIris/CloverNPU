@@ -2,7 +2,7 @@
 
 CloverNPU 是一个**面向研究与验证**的传统体制可编程 NPU。它不采用 GPGPU 的宽 SIMT/warp 模型，也不把卷积、ReLU 等算子做成硬连线宏；计算由标量控制核执行 C kernel，通过紧耦合的 tile 指令驱动可编程向量/矩阵引擎，配合 DMA、scratchpad 与显式片上缓存完成。
 
-> 当前状态：**M2b 完成**。工具链、架构/ISA/ABI 规范、汇编器、ISS、最小 C 编译器，以及可综合的 5 级 Clover-S RTL 核均可端到端运行；19 个 C 程序已通过 ISS/RTL 差分。
+> 当前状态：**M3a 完成**。M2 的标量工具链与 5 级 RTL 核已稳定；M3a 新增 256 KB scratchpad、AXI4-Lite + 全局 CSR，并让 5 级核从 scratchpad 取指/读写。DMA、AXI4 master 与命令队列是下一段。
 
 ## 设计目标
 
@@ -21,7 +21,7 @@ CloverNPU 是一个**面向研究与验证**的传统体制可编程 NPU。它�
 | 矩阵引擎 | 16 x 16 MAC，单条 MMA 处理 M,N,K <= 16 的 block |
 | 向量引擎 | 16 lane，流式描述符驱动，N 由运行时给出 |
 | 数值 | FP16/BF16/FP8-E4M3/FP8-E5M2/FP4-E2M1 存储；FP32 计算/累加 |
-| 片上存储 | 256 KB scratchpad（16 bank）+ 32 KB I-cache + 16 KB D-cache |
+| 片上存储 | 256 KB scratchpad（16 bank，2R1W 64B，已实现）；I/D-cache 待接入 |
 | 外部接口 | AXI4 master（128-bit data）/ AXI4-Lite slave（32-bit） |
 | 命令接口 | 64 B 命令、DRAM 环形队列、doorbell + completion ring + IRQ |
 | 主机 runtime | C API + JSON Graph IR，执行时解析动态 shape |
@@ -65,7 +65,8 @@ make smoke                  # 工具链最小闭环：Verilator + Icarus + cocot
 make tools                  # 构建 cloverc / clover-as / clover-iss / clover-objdump
 make m2-test                # 23 个汇编/C 程序的 ISS 端到端回归
 make rtl-core-test          # 19 个 C 程序在 5 级 RTL 核上复现
-make rtl-synth              # Yosys read/proc/check
+make rtl-mem-test           # scratchpad + AXI-CSR + core-from-scratchpad
+make rtl-mem-synth          # Yosys check of the M3 memory blocks
 ```
 
 ## 设计文档
@@ -78,6 +79,7 @@ make rtl-synth              # Yosys read/proc/check
 - [验证与工具链](docs/05-verification.md)
 - [路线图](docs/06-roadmap.md)
 - [M2 状态（软件切片 + RTL 核）](docs/07-m2-status.md)
+- [M3a 状态（scratchpad + AXI-Lite/CSR）](docs/08-m3-status.md)
 
 ## 现在就能跑的 C
 
@@ -116,6 +118,14 @@ void gemm_block(const clover_mma_desc *d)
 > 当前编译器还没有预处理器与 struct 支持，这段 kernel 是 M4/M5 的目标形态；M2 先用无头文件的整数 C 打通执行链路。
 
 真正的 GEMM 由 C 循环遍历 M/N/K block，并在 K 方向设置 `accumulate`，不是硬件固化算子。
+
+## M3a 的存储/总线底座
+
+- `rtl/mem/clover_scratchpad.sv`：256 KB，16 bank × 16 KB，2 个 64 B 读端口 + 1 个 64 B 写端口，byte enable。
+- `rtl/bus/clover_axi4lite_slave.sv`：32-bit AXI4-Lite slave，独立 AW/W 通道、B/R 响应。
+- `rtl/top/clover_csr.sv`：全局 CSR（ID/VERSION/STATUS/CONTROL/IRQ/QUEUE/COMPLETE/CYCLE/SCRATCH/CAP）。
+- `rtl/top/clover_axi_csr.sv`：AXI4-Lite + CSR 集成。
+- `rtl/top/clover_core_mem.sv`：5 级核 + scratchpad 取指/读写适配器（带测试 loader 端口）。
 
 ## M2b 的 RTL 核
 

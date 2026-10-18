@@ -112,6 +112,32 @@
     localparam logic [11:0] CSR_INSTRET  = 12'hC02;
     localparam logic [11:0] CSR_TILE_STATUS = 12'h7C0;
 
+    // Global CSR offsets (AXI4-Lite window in docs/03-abi.md).
+    localparam logic [11:0] CSR_ID            = 12'h000;
+    localparam logic [11:0] CSR_VERSION       = 12'h004;
+    localparam logic [11:0] CSR_STATUS        = 12'h008;
+    localparam logic [11:0] CSR_CONTROL       = 12'h00C;
+    localparam logic [11:0] CSR_IRQ_STATUS    = 12'h010;
+    localparam logic [11:0] CSR_IRQ_ENABLE    = 12'h014;
+    localparam logic [11:0] CSR_QUEUE_BASE    = 12'h018;
+    localparam logic [11:0] CSR_QUEUE_SIZE    = 12'h01C;
+    localparam logic [11:0] CSR_QUEUE_HEAD    = 12'h020;
+    localparam logic [11:0] CSR_QUEUE_TAIL    = 12'h024;
+    localparam logic [11:0] CSR_COMPLETE_BASE = 12'h028;
+    localparam logic [11:0] CSR_COMPLETE_SIZE = 12'h02C;
+    localparam logic [11:0] CSR_COMPLETE_HEAD = 12'h030;
+    localparam logic [11:0] CSR_COMPLETE_TAIL = 12'h034;
+    localparam logic [11:0] CSR_CYCLE_LO      = 12'h038;
+    localparam logic [11:0] CSR_CYCLE_HI      = 12'h03C;
+    localparam logic [11:0] CSR_ERROR_CODE    = 12'h040;
+    localparam logic [11:0] CSR_ERROR_ADDR    = 12'h044;
+    localparam logic [11:0] CSR_ABORT         = 12'h048;
+    localparam logic [11:0] CSR_SCRATCH_BASE  = 12'h04C;
+    localparam logic [11:0] CSR_SCRATCH_SIZE  = 12'h050;
+    localparam logic [11:0] CSR_CAP0          = 12'h054;
+    localparam logic [11:0] CSR_CAP1          = 12'h058;
+    localparam logic [11:0] CSR_SOFT_RESET    = 12'h05C;
+
     // Trap causes.
     localparam logic [31:0] CAUSE_ILLEGAL       = 32'd2;
     localparam logic [31:0] CAUSE_BREAKPOINT    = 32'd3;

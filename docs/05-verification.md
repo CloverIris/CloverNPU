@@ -180,10 +180,13 @@ make m2-test         # 23 个汇编/C 的 ISS 端到端用例
 make rtl-lint        # Verilator lint of clover_core
 make rtl-synth       # Yosys read/proc/check of clover_core
 make rtl-core-test   # 19 个 C 程序的 ISS/RTL 差分
+make rtl-mem-lint    # scratchpad / AXI-CSR / core+mem lint
+make rtl-mem-synth   # scratchpad / AXI-CSR / core+mem Yosys check
+make rtl-mem-test    # scratchpad + AXI-CSR + 6 个 core-from-scratchpad 程序
 make check           # 以上全部
 ```
 
-M2 已完成；M3 会加入 cache/AXI/DMA/命令队列与相应的协议检查。RTL 核的 testbench 使用直接映射的仿真内存，因此当前 RTL 测试不覆盖 AXI backpressure/cache 一致性。
+M2 与 M3a 已完成；M3b 会加入 AXI4 master、DMA、命令队列与 AXI protocol checker。当前 RTL 存储测试仍以定向用例为主，尚未覆盖 AXI 随机 backpressure/cache 一致性。
 
 ## 9. 失败处理约定
 

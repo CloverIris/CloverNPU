@@ -56,12 +56,22 @@
 
 目标：**主机能通过 AXI-Lite 配置，通过 AXI4 搬数据，NPU 按命令队列执行。**
 
-- Scratchpad 256 KB、16 bank、2R1W、仲裁。
-- I-cache 32 KB / D-cache 16 KB（可先关闭 cache，直连）。
-- AXI4 master + AXI4-Lite slave + 协议断言。
-- DMA 2D，4 outstanding。
+### M3a · 存储/CSR 底座（已完成，2026-10-18）
+
+- Scratchpad 256 KB、16 bank、2R1W、64 B 端口、byte enable。
+- AXI4-Lite slave + 全局 CSR（queue/doorbell/IRQ/completion 寄存器）。
+- 5 级核从 scratchpad 取指/读写（64 B 行 → 32-bit lane 适配）。
+- 6 个 C 程序通过 core-from-scratchpad 测试；Yosys check 通过。
+- 详见 [M3a 状态](08-m3-status.md)。
+
+### M3b · DMA、AXI4 master、命令队列（下一步）
+
+- AXI4 master（128-bit，INCR burst，读写通道，backpressure）。
+- DMA 2D（DRAM ↔ scratchpad，行/stride）。
 - Command processor：ring、doorbell、completion、IRQ、error/abort。
-- `libclover` 仿真后端：mmap 共享内存 + AXI 事务模型。
+- Core + DMA + CP 的 `clover_npu` 顶层。
+- `libclover` 仿真后端。
+- I-cache/D-cache 可在 M3b 后段接入。
 
 **验收**：
 
