@@ -12,7 +12,7 @@ unsigned int min_u(unsigned int a, unsigned int b)
     return (a < b) ? a : b;
 }
 
-void gemm(unsigned int *args)
+int gemm(unsigned int *args)
 {
     unsigned int M = args[0];
     unsigned int N = args[1];
@@ -56,4 +56,5 @@ void gemm(unsigned int *args)
             __clover_wait(1);
         }
     }
+    return 0;
 }

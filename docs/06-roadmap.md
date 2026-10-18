@@ -134,6 +134,15 @@
 
 ## M6 · 图 runtime + RTL 端到端
 
+### M6a · Simulation graph runtime（已完成，2026-10-18）
+
+- `libclover` 仿真后端：设备/buffer/拷贝/kernel image/graph。
+- `GEMM → VEC ADD` 两节点图；动态 shape `16x16x16`、`17x19x23` 通过。
+- 仍直接调用 ISS，不经过 AXI/命令队列；CLOV/JSON 图解析后续。
+- 详见 [图 runtime](11-graph-runtime.md)。
+
+### M6b · 完整图 runtime（下一步）
+
 目标：**主机组图，NPU 执行，动态 shape，RTL 与 golden 一致。**
 
 - `libclover` Graph IR（JSON）、shape inference、内存规划、命令编码。

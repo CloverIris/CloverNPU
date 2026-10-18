@@ -32,6 +32,8 @@ class Iss {
     explicit Iss(IssOptions options = {});
 
     bool load_image(const std::vector<uint8_t> &image, std::string &error);
+    bool load_image_at(uint32_t base, const std::vector<uint8_t> &image,
+                       std::string &error);
     IssResult run(std::string *trace_output = nullptr);
 
     void boot(uint32_t entry, uint32_t sp, uint32_t arg);

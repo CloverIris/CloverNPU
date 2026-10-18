@@ -58,9 +58,13 @@ clover_status clover_copy_h2d(clover_device *dev, clover_buffer *dst,
 clover_status clover_copy_d2h(clover_device *dev, void *dst,
                               clover_buffer *src, size_t bytes);
 
-/* Kernel image loading (CLOV). */
+/* Kernel image loading.  The simulator backend accepts a flat image plus an
+ * explicit load base and entry address.  CLOV parsing is a later milestone. */
 clover_status clover_load(clover_device *dev, const void *clov, size_t bytes,
                           clover_kernel **out);
+clover_status clover_load_image(clover_device *dev, const void *image,
+                                size_t bytes, uint32_t load_base,
+                                uint32_t entry, clover_kernel **out);
 void clover_kernel_free(clover_kernel *kernel);
 
 /* Low-level command submission.  cmds points at an array of clover_cmd. */
@@ -78,6 +82,17 @@ clover_status clover_graph_execute(clover_graph *graph,
                                    uint32_t n_inputs,
                                    struct clover_tensor *outputs,
                                    uint32_t n_outputs);
+/* Direct-tensor graph API used by the simulator backend.
+ * `op` is "gemm" or "add"; tensors carry device addresses and shapes.
+ * The runtime executes nodes in insertion order. */
+clover_status clover_graph_add_op(clover_graph *graph, clover_kernel *kernel,
+                                  const char *op,
+                                  const struct clover_tensor *inputs,
+                                  uint32_t n_inputs,
+                                  const struct clover_tensor *outputs,
+                                  uint32_t n_outputs);
+clover_status clover_graph_run(clover_graph *graph);
+
 void clover_graph_destroy(clover_graph *graph);
 
 #ifdef __cplusplus

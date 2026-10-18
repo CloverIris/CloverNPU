@@ -159,19 +159,27 @@ Iss::Iss(IssOptions options)
     csrs_[kMstatus] = 0;
 }
 
-bool Iss::load_image(const std::vector<uint8_t> &image, std::string &error)
+bool Iss::load_image_at(uint32_t base, const std::vector<uint8_t> &image,
+                        std::string &error)
 {
     if (image.size() > kDramSize) {
         error = "image too large";
         return false;
     }
-    if (options_.load_base < kDramBase ||
-        options_.load_base + image.size() > kDramBase + kDramSize) {
+    if (base < kDramBase || base + image.size() > kDramBase + kDramSize) {
         error = "image does not fit in the DRAM window";
         return false;
     }
     std::copy(image.begin(), image.end(),
-              dram_.begin() + (options_.load_base - kDramBase));
+              dram_.begin() + (base - kDramBase));
+    return true;
+}
+
+bool Iss::load_image(const std::vector<uint8_t> &image, std::string &error)
+{
+    if (!load_image_at(options_.load_base, image, error)) {
+        return false;
+    }
 
     if (options_.bss_size > 0) {
         const uint32_t bss_addr =
