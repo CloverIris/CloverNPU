@@ -214,4 +214,100 @@ function automatic [31:0] clover_bf16_to_fp32(input logic [15:0] h);
     end
 endfunction
 
+
+function automatic [31:0] clover_fp8_e4m3_to_fp32(input logic [7:0] b);
+    logic sign;
+    logic [3:0] exp;
+    logic [2:0] mant;
+    logic [7:0] exp32;
+    logic [31:0] value;
+    begin
+        sign = b[7];
+        exp  = b[6:3];
+        mant = b[2:0];
+        if (exp == 4'hF && mant == 3'h7) begin
+            value = 32'h7FC0_0000;
+        end else if (exp == 4'd0) begin
+            case (mant)
+            3'd0: value = 32'h0000_0000;
+            3'd1: value = 32'h3B00_0000; // 2^-9
+            3'd2: value = 32'h3B80_0000; // 2^-8
+            3'd3: value = 32'h3BC0_0000; // 1.5*2^-8
+            3'd4: value = 32'h3C00_0000; // 2^-7
+            3'd5: value = 32'h3C20_0000; // 1.25*2^-7
+            3'd6: value = 32'h3C40_0000; // 1.5*2^-7
+            default: value = 32'h3C60_0000; // 1.75*2^-7
+            endcase
+        end else begin
+            exp32 = {4'd0, exp} + 8'd120;
+            value = {1'b0, exp32, mant, 20'd0};
+        end
+        clover_fp8_e4m3_to_fp32 = sign ? {~value[31], value[30:0]} : value;
+    end
+endfunction
+
+function automatic [31:0] clover_fp8_e5m2_to_fp32(input logic [7:0] b);
+    logic sign;
+    logic [4:0] exp;
+    logic [1:0] mant;
+    logic [7:0] exp32;
+    logic [31:0] value;
+    begin
+        sign = b[7];
+        exp  = b[6:2];
+        mant = b[1:0];
+        if (exp == 5'h1F) begin
+            if (mant == 2'd0)
+                value = {1'b0, 8'hFF, 23'd0};
+            else
+                value = 32'h7FC0_0000;
+        end else if (exp == 5'd0) begin
+            case (mant)
+            2'd0: value = 32'h0000_0000;
+            2'd1: value = 32'h3780_0000; // 2^-16
+            2'd2: value = 32'h3800_0000; // 2^-15
+            default: value = 32'h3840_0000; // 1.5*2^-15
+            endcase
+        end else begin
+            exp32 = {3'd0, exp} + 8'd112;
+            value = {1'b0, exp32, mant, 21'd0};
+        end
+        clover_fp8_e5m2_to_fp32 = sign ? {~value[31], value[30:0]} : value;
+    end
+endfunction
+
+function automatic [31:0] clover_fp4_to_fp32(input logic [3:0] b);
+    logic sign;
+    logic [1:0] exp;
+    logic mant;
+    logic [31:0] value;
+    begin
+        sign = b[3];
+        exp  = b[2:1];
+        mant = b[0];
+        case ({exp, mant})
+        3'd0: value = 32'h0000_0000;
+        3'd1: value = 32'h3F00_0000; // 0.5
+        3'd2: value = 32'h3F80_0000; // 1.0
+        3'd3: value = 32'h3FC0_0000; // 1.5
+        3'd4: value = 32'h4000_0000; // 2.0
+        3'd5: value = 32'h4040_0000; // 3.0
+        3'd6: value = 32'h4080_0000; // 4.0
+        default: value = 32'h40C0_0000; // 6.0
+        endcase
+        clover_fp4_to_fp32 = sign ? {~value[31], value[30:0]} : value;
+    end
+endfunction
+
+function automatic [2:0] clover_dtype_size(input logic [2:0] dtype);
+    begin
+        case (dtype)
+        3'd0: clover_dtype_size = 3'd4;
+        3'd1, 3'd2: clover_dtype_size = 3'd2;
+        3'd3, 3'd4, 3'd5: clover_dtype_size = 3'd1;
+        default: clover_dtype_size = 3'd0;
+        endcase
+    end
+endfunction
+
 `endif

@@ -111,7 +111,9 @@ async def npu_rtl_gemm(dut):
     dut.rst_n.value = 1
     await RisingEdge(dut.clk)
 
-    m, n, k = 17, 19, 23
+    m = int(cocotb.plusargs.get("SHAPE_M", "17"))
+    n = int(cocotb.plusargs.get("SHAPE_N", "19"))
+    k = int(cocotb.plusargs.get("SHAPE_K", "23"))
     a_vals = [[(mi * 7 + ki * 3) % 16 for ki in range(k)] for mi in range(m)]
     b_vals = [[(ki * 5 + ni * 2) % 16 for ni in range(n)] for ki in range(k)]
 
@@ -194,4 +196,4 @@ async def npu_rtl_gemm(dut):
             got = result[mi * n + ni]
             assert got == expected, f"C[{mi},{ni}] {got} != {expected}"
 
-    dut._log.info("RTL GEMM 17x19x23 passed")
+    dut._log.info(f"RTL GEMM {m}x{n}x{k} passed")

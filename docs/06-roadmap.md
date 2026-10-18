@@ -120,7 +120,13 @@
 - MMA/VEC 接入 NPU；GEMM → VEC ADD 两节点图 17×19×23 通过。
 - 详见 [RTL 图](14-rtl-graph.md)。
 
-#### M4e · 多 shape、FP8/FP4 与 RTL 图后端（下一步）
+#### M4e · 多 shape + FP4–FP16（部分完成，2026-10-18）
+
+- RTL GEMM 回归：16×16×16、17×19×23。
+- MMA A/B 支持 FP4/E4M3/E5M2/FP16/BF16/FP32；格式测试通过。
+- VEC 仍只有 FP32；低精度 VEC/scale 与 RTL 图后端下一步。
+
+#### M4f · VEC 低精度、scale 与 RTL 图后端（下一步）
 
 目标：**描述符驱动的 MMA/VEC/CVT/REDUCE 在 RTL 上正确。**
 

@@ -150,3 +150,88 @@ async def tile_mma_16(dut):
             assert got == expected, f"acc C[{mi},{ni}] {got} != {expected}"
 
     dut._log.info("tile MMA 16x16x16, 8x8x8 and accumulate passed")
+
+
+FP4_CODE = {0.0: 0, 0.5: 1, 1.0: 2, 1.5: 3, 2.0: 4, 3.0: 5, 4.0: 6, 6.0: 7}
+E4M3_CODE = {0.0: 0x00, 0.5: 0x30, 1.0: 0x38, 1.5: 0x3C,
+             2.0: 0x40, 3.0: 0x44, 4.0: 0x48, 6.0: 0x4C}
+E5M2_CODE = {0.0: 0x00, 0.5: 0x38, 1.0: 0x3C, 1.5: 0x3E,
+             2.0: 0x40, 3.0: 0x42, 4.0: 0x44, 6.0: 0x46}
+VALS = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0]
+
+
+async def run_format_case(dut, a_type, b_type, code_map, elem_size):
+    m = n = k = 16
+    a_base, b_base, c_base = 0x10000, 0x20000, 0x30000
+    a_stride = k * elem_size
+    b_stride = n * elem_size
+
+    a_vals = [[VALS[(mi * 3 + ki * 5) % 8] for ki in range(k)] for mi in range(m)]
+    b_vals = [[VALS[(ki * 7 + ni * 2) % 8] for ni in range(n)] for ki in range(k)]
+
+    a_bytes = bytearray()
+    for mi in range(m):
+        for ki in range(k):
+            a_bytes.append(code_map[a_vals[mi][ki]] & 0xFF)
+    b_bytes = bytearray()
+    for ki in range(k):
+        for ni in range(n):
+            b_bytes.append(code_map[b_vals[ki][ni]] & 0xFF)
+
+    for data, base, total in ((a_bytes, a_base, m * k), (b_bytes, b_base, k * n)):
+        data += b"\x00" * ((64 - len(data) % 64) % 64)
+        for line in range(0, len(data), 64):
+            await host_write_line(dut, base + line, int.from_bytes(data[line:line + 64], "little"))
+
+    for line in range(16):
+        await host_write_line(dut, c_base + line * 64, 0)
+
+    desc = [
+        0x31414D4D,
+        (a_type << 5) | (b_type << 8) | (1 << 4),
+        m, n, k, a_base, b_base, c_base,
+        a_stride, b_stride, 64, 0, 0, 0, 0, 0,
+    ]
+    await host_write_line(dut, 0, pack_words(desc))
+    dut.desc_addr.value = 0
+    dut.start.value = 1
+    await RisingEdge(dut.clk)
+    dut.start.value = 0
+    for _ in range(200000):
+        await RisingEdge(dut.clk)
+        if int(dut.done.value):
+            break
+    else:
+        raise AssertionError("format MMA timeout")
+    assert int(dut.error.value) == 0, f"format MMA error {int(dut.error_code.value)}"
+
+    result = []
+    for line in range(16):
+        value = await host_read_line(dut, c_base + line * 64)
+        result.extend(f32(word) for word in unpack_words(value))
+    for mi in range(m):
+        for ni in range(n):
+            expected = sum(a_vals[mi][ki] * b_vals[ki][ni] for ki in range(k))
+            got = result[mi * 16 + ni]
+            assert got == expected, f"fmt type={a_type} C[{mi},{ni}] {got} != {expected}"
+
+
+@cocotb.test()
+async def tile_mma_formats(dut):
+    cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+    dut.host_we.value = 0
+    dut.host_addr.value = 0
+    dut.host_wdata.value = 0
+    dut.host_be.value = 0
+    dut.start.value = 0
+    dut.desc_addr.value = 0
+    dut.rst_n.value = 0
+    for _ in range(3):
+        await RisingEdge(dut.clk)
+    dut.rst_n.value = 1
+    await RisingEdge(dut.clk)
+
+    await run_format_case(dut, 3, 3, E4M3_CODE, 1)
+    await run_format_case(dut, 5, 5, FP4_CODE, 1)
+    await run_format_case(dut, 4, 4, E5M2_CODE, 1)
+    dut._log.info("MMA FP4/E4M3/E5M2 formats passed")

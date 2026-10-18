@@ -1,6 +1,6 @@
 # 12 · RTL Tile Engine：FP32 单元与串行 MMA
 
-**状态：M4c-MMA + M4c-Integration 已完成（2026-10-18）**。可综合的 FP32 add/mul、FP16/BF16 解包和串行 16×16×16 MMA 已实现；`16x16x16`、`8x8x8`、accumulate 三组 block 测试通过，Yosys 通过；MMA 已接入 core/NPU，完整 RTL GEMM `17x19x23` 通过。还没有 RTL VEC。
+**状态：M4c + M4e-formats 已完成（2026-10-18）**。可综合 FP32 add/mul、FP16/BF16/FP8-E4M3/FP8-E5M2/FP4-E2M1 解包和串行 16×16×16 MMA；`16x16x16`、`8x8x8`、accumulate、FP4/FP8 格式测试通过；MMA 已接入 core/NPU，RTL GEMM `16x16x16` 与 `17x19x23` 通过。RTL VEC 见 [RTL 图](14-rtl-graph.md)。
 
 ## 1. FP32 数据通路
 
@@ -23,7 +23,7 @@ make rtl-tile-test   # 同时跑 fp32 与 tile_mma
 
 - 64 B `MMA1` 描述符 fetch（16 个 32-bit 字）。
 - 支持 M/N/K ≤ 16、accumulate、transpose A/B、ReLU。
-- A/B 支持 FP16（type=1）与 BF16（type=2）；C 固定 FP32（type=0）。
+- A/B 支持 FP32（0）、FP16（1）、BF16（2）、FP8-E4M3（3）、FP8-E5M2（4）、FP4-E2M1（5）；元素宽度 4/2/1 字节；C 固定 FP32。FP4 当前按 1 byte/element 存储。
 - 串行 1 MAC/cycle：A 从 scratchpad 读端口 A，B 从端口 B；C 通过写端口逐元素写回。
 - `busy/done/error/error_code`；错误码：1 magic、2 范围、3 dtype。
 - 描述符 fetch 使用端口 A，C accumulate 使用端口 B。
@@ -46,8 +46,8 @@ PASS tile_mma
 
 ## 4. 已知限制
 
-- 只实现 MMA；VEC/CVT/REDUCE/DMA 仍在 ISS 功能模型。
-- FP8-E4M3/E5M2/FP4 的 RTL 解包尚未实现。
+- MMA 已支持 FP4–FP16；VEC 只有 FP32（见 [RTL 图](14-rtl-graph.md)）。
+- FP4/FP8 已支持 A/B 解包；C 仍是 FP32，低精度 C 输出未实现。
 - 次正规输入/输出与结果 flush 到 0；尚未做完整 IEEE 次正规舍入。
 - 单 MAC/cycle，16×16×16 约 4100 cycles；没有 16×16 阵列。
 - 没有 per-tensor/per-channel scale、post-scale/bias 的 RTL（ISS 已支持）。
@@ -56,7 +56,7 @@ PASS tile_mma
 
 ## 5. 下一步
 
-1. 补 RTL VEC 引擎，让 RTL 也能跑 `GEMM → ADD` 图。
-2. FP8/FP4 RTL 解包与 scale。
-3. 多 shape RTL GEMM 回归（16×16×16 等）。
-4. 图 runtime 的 RTL/Verilator 后端。
+1. VEC 的 FP16/BF16/FP8/FP4 路径。
+2. per-tensor/per-channel scale 的 RTL。
+3. 图 runtime 的 RTL/Verilator 后端。
+4. CLOV/manifest 与编译器 `struct/#include`。

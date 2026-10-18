@@ -2,7 +2,7 @@
 
 CloverNPU 是一个**面向研究与验证**的传统体制可编程 NPU。它不采用 GPGPU 的宽 SIMT/warp 模型，也不把卷积、ReLU 等算子做成硬连线宏；计算由标量控制核执行 C kernel，通过紧耦合的 tile 指令驱动可编程向量/矩阵引擎，配合 DMA、scratchpad 与显式片上缓存完成。
 
-> 当前状态：**M4d + M6a 完成**。RTL 已跑通 `GEMM → VEC ADD` 两节点图（17×19×23）：CP 队列 + DMA + core `tile.mma/tile.vec/tile.wait` + completion/IRQ。主机图 runtime 仍走 ISS；多 shape、FP8/FP4 与 RTL 图后端是下一段。
+> 当前状态：**M4d + M4e-formats + M6a 完成**。RTL 支持 FP4/FP8/FP16/BF16 MMA，GEMM 已在 16×16×16 与 17×19×23 上通过，并跑通 `GEMM → VEC ADD` 两节点图。主机图 runtime 仍走 ISS；VEC 低精度、RTL 图后端与 CLOV 是下一段。
 
 ## 设计目标
 
@@ -75,6 +75,8 @@ make rtl-graph-test         # RTL GEMM -> VEC ADD two-node graph
 make rtl-mem-synth          # Yosys check of the M3/M4a blocks
 ```
 
+RTL GEMM 回归覆盖 `16x16x16` 与 `17x19x23`；MMA 格式覆盖 FP4/E4M3/E5M2/FP16/BF16。
+
 ## 设计文档
 
 - [决策记录](docs/00-decisions.md)
@@ -146,6 +148,7 @@ void gemm_block(const clover_mma_desc *d)
 - `kernels/add.c` + `runtime/src/clover_sim.cpp`：`GEMM → VEC ADD` 两节点图。
 - `rtl/fp/clover_fp_pkg.sv` + `rtl/tile/clover_tile_mma.sv`：可综合 FP32 add/mul 与串行 MMA。
 - `rtl/tile/clover_tile_vec.sv`：FP32 VEC ADD/MUL/RELU。
+- `rtl/tile/clover_tile_mma.sv`：FP4–FP16 MMA 格式。
 - `rtl/top/clover_npu_mem.sv`：tile MMA/VEC 接入 core/CP/DMA；RTL GEMM 与 GEMM→ADD 图通过。
 
 ## M2b 的 RTL 核

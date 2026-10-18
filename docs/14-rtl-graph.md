@@ -49,7 +49,7 @@ PASS npu_rtl_graph
 
 ## 4. 已知限制
 
-- VEC 只支持 FP32；FP16/BF16/FP8/FP4 向量路径未实现。
+- VEC 只支持 FP32；MMA 已支持 FP4–FP16。
 - VEC 忽略 `post_scale`/`post_bias`（当前 `add.c` 用 1.0/0）。
 - 图是“两个 RUN 命令”的固定序列，不是通用 JSON/CLOV 图解析。
 - 两个 kernel 的 code 必须手工放在不同 scratchpad 地址（gemm 0，add 0x1000）。

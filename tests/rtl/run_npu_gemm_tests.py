@@ -81,21 +81,31 @@ def main() -> int:
         build_args=["--timing", "-Wno-fatal"],
         always=True,
     )
-    results = runner.test(
-        hdl_toplevel="clover_npu_mem_tb",
-        hdl_toplevel_library="npu_gemm_lib",
-        test_module="test_npu_gemm",
-        test_dir=ROOT / "sim" / "npu",
-        build_dir=SIM_BUILD,
-        plusargs=[f"+KERNEL_BIN={kernel}", f"+KERNEL_ENTRY=0x{entry:x}"],
-        seed=1,
-    )
-    tree = ET.parse(results)
-    problems = tree.findall(".//failure") + tree.findall(".//error")
-    if problems:
-        print(f"FAIL npu_rtl_gemm: {problems[0].get('message', 'test failed')}")
-        return 1
-    print("PASS npu_rtl_gemm")
+    for shape in ((16, 16, 16), (17, 19, 23)):
+        results = runner.test(
+            hdl_toplevel="clover_npu_mem_tb",
+            hdl_toplevel_library="npu_gemm_lib",
+            test_module="test_npu_gemm",
+            test_dir=ROOT / "sim" / "npu",
+            build_dir=SIM_BUILD,
+            plusargs=[
+                f"+KERNEL_BIN={kernel}",
+                f"+KERNEL_ENTRY=0x{entry:x}",
+                f"+SHAPE_M={shape[0]}",
+                f"+SHAPE_N={shape[1]}",
+                f"+SHAPE_K={shape[2]}",
+            ],
+            seed=1,
+        )
+        tree = ET.parse(results)
+        problems = tree.findall(".//failure") + tree.findall(".//error")
+        if problems:
+            print(
+                f"FAIL npu_rtl_gemm {shape[0]}x{shape[1]}x{shape[2]}: "
+                f"{problems[0].get('message', 'test failed')}"
+            )
+            return 1
+        print(f"PASS npu_rtl_gemm {shape[0]}x{shape[1]}x{shape[2]}")
     return 0
 
 

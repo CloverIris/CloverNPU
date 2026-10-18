@@ -59,9 +59,9 @@ module clover_tile_mma (
     logic [31:0] a_element_addr, b_element_addr, c_element_addr;
     logic [31:0] a_word, b_word, c_word;
     logic [3:0]  a_lane, b_lane, c_lane;
-    logic        a_half, b_half;
-    logic [1:0]  c_offset;
-    logic [15:0] a_bits, b_bits;
+    logic [1:0]  a_byte_off, b_byte_off, c_offset;
+    logic [2:0]  a_size, b_size;
+    logic [31:0] a_raw, b_raw;
     logic [31:0] a_f32, b_f32, prod, acc, acc_next;
     logic [31:0] c_write;
 
@@ -92,20 +92,38 @@ module clover_tile_mma (
         a_lane = a_element_addr[5:2];
         b_lane = b_element_addr[5:2];
         c_lane = c_element_addr[5:2];
-        a_half = a_element_addr[1];
-        b_half = b_element_addr[1];
+        a_byte_off = a_element_addr[1:0];
+        b_byte_off = b_element_addr[1:0];
         c_offset = c_element_addr[1:0];
 
         a_word = a_rdata[32 * a_lane +: 32];
         b_word = b_rdata[32 * b_lane +: 32];
         c_word = b_rdata[32 * c_lane +: 32];
-        a_bits = a_half ? a_word[31:16] : a_word[15:0];
-        b_bits = b_half ? b_word[31:16] : b_word[15:0];
+        a_raw = (a_size == 3'd4) ? a_word :
+                (a_size == 3'd2) ? (a_byte_off[1] ? a_word[31:16] : a_word[15:0]) :
+                                   {24'd0, a_word[8 * a_byte_off +: 8]};
+        b_raw = (b_size == 3'd4) ? b_word :
+                (b_size == 3'd2) ? (b_byte_off[1] ? b_word[31:16] : b_word[15:0]) :
+                                   {24'd0, b_word[8 * b_byte_off +: 8]};
 
-        a_f32 = (a_type == 3'd2) ? clover_bf16_to_fp32(a_bits) :
-                                  clover_fp16_to_fp32(a_bits);
-        b_f32 = (b_type == 3'd2) ? clover_bf16_to_fp32(b_bits) :
-                                  clover_fp16_to_fp32(b_bits);
+        case (a_type)
+        3'd0: a_f32 = a_raw;
+        3'd1: a_f32 = clover_fp16_to_fp32(a_raw[15:0]);
+        3'd2: a_f32 = clover_bf16_to_fp32(a_raw[15:0]);
+        3'd3: a_f32 = clover_fp8_e4m3_to_fp32(a_raw[7:0]);
+        3'd4: a_f32 = clover_fp8_e5m2_to_fp32(a_raw[7:0]);
+        3'd5: a_f32 = clover_fp4_to_fp32(a_raw[3:0]);
+        default: a_f32 = 32'd0;
+        endcase
+        case (b_type)
+        3'd0: b_f32 = b_raw;
+        3'd1: b_f32 = clover_fp16_to_fp32(b_raw[15:0]);
+        3'd2: b_f32 = clover_bf16_to_fp32(b_raw[15:0]);
+        3'd3: b_f32 = clover_fp8_e4m3_to_fp32(b_raw[7:0]);
+        3'd4: b_f32 = clover_fp8_e5m2_to_fp32(b_raw[7:0]);
+        3'd5: b_f32 = clover_fp4_to_fp32(b_raw[3:0]);
+        default: b_f32 = 32'd0;
+        endcase
         prod = clover_fp32_mul(a_f32, b_f32);
         acc_next = clover_fp32_add(acc, prod);
 
@@ -119,16 +137,16 @@ module clover_tile_mma (
         // A element address.
         a_element_addr = a_base;
         if (transpose_a)
-            a_element_addr = a_base + ki * a_stride + mi * 2;
+            a_element_addr = a_base + ki * a_stride + mi * a_size;
         else
-            a_element_addr = a_base + mi * a_stride + ki * 2;
+            a_element_addr = a_base + mi * a_stride + ki * a_size;
 
         // B element address.
         b_element_addr = b_base;
         if (transpose_b)
-            b_element_addr = b_base + ni * b_stride + ki * 2;
+            b_element_addr = b_base + ni * b_stride + ki * b_size;
         else
-            b_element_addr = b_base + ki * b_stride + ni * 2;
+            b_element_addr = b_base + ki * b_stride + ni * b_size;
 
         // C element address (FP32).
         c_element_addr = c_base + mi * c_stride + ni * 4;
@@ -228,6 +246,8 @@ module clover_tile_mma (
                 a_type     = flags[7:5];
                 b_type     = flags[10:8];
                 c_type     = flags[13:11];
+                a_size     = clover_dtype_size(a_type);
+                b_size     = clover_dtype_size(b_type);
 
                 if (d[0] != 32'h3141_4D4D) begin
                     error_q      <= 1'b1;
@@ -242,9 +262,8 @@ module clover_tile_mma (
                     busy_q       <= 1'b0;
                     done_q       <= 1'b1;
                     state        <= ST_IDLE;
-                end else if ((a_type != 3'd1 && a_type != 3'd2) ||
-                             (b_type != 3'd1 && b_type != 3'd2) ||
-                             (c_type != 3'd0)) begin
+                end else if ((a_type > 3'd5) || (b_type > 3'd5) ||
+                             (c_type != 3'd0) || (a_size == 0) || (b_size == 0)) begin
                     error_q      <= 1'b1;
                     error_code_q <= 4'd3;
                     busy_q       <= 1'b0;

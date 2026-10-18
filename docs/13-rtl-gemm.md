@@ -55,7 +55,7 @@ PASS npu_rtl_gemm
 ## 4. 已知限制
 
 - RTL 已支持 MMA 与 FP32 VEC；VEC 的 FP16/BF16/FP8/FP4 路径未实现。
-- A/B 仅 FP16/BF16；FP8/FP4 的 RTL 解包未实现。
+- A/B 支持 FP4–FP16；C 仍为 FP32，低精度 C 输出未实现。
 - 次正规输入/输出 flush 到 0；没有完整 IEEE 次正规舍入。
 - 串行 1 MAC/cycle：17×19×23 的 8 个 block 约 18 万 cycles（仿真 184 µs）。
 - 没有 per-tensor/per-channel scale、post-scale/bias 的 RTL。
