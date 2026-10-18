@@ -98,7 +98,16 @@
 - `kernels/gemm.c` 动态 M/N/K；`16x16x16` 与 `17x19x23` bit-exact。
 - 详见 [M4b 状态](10-m4b-tile-software.md)。
 
-### M4c · RTL Tile Engine（下一步）
+### M4c · RTL Tile Engine
+
+#### M4c-MMA（已完成，2026-10-18）
+
+- 可综合 FP32 add/mul（2000 组随机 normal 对比 numpy）。
+- 串行 16×16×16 MMA：描述符 fetch、FP16/BF16、accumulate/transpose/ReLU、C FP32。
+- 16×16×16、8×8×8、accumulate RTL 测试通过；Yosys check 通过。
+- 详见 [RTL Tile MMA](12-rtl-tile-mma.md)。
+
+#### M4c-Integration（下一步）
 
 目标：**描述符驱动的 MMA/VEC/CVT/REDUCE 在 RTL 上正确。**
 

@@ -6,7 +6,7 @@ CMAKE_BUILD := $(BUILD)/cmake
 CC      ?= cc
 CXX     ?= c++
 
-.PHONY: help all check check-tools abi-check tools compiler m2-test tile-gemm-test runtime-graph-test rtl-lint rtl-synth rtl-core-test rtl-mem-lint rtl-mem-synth rtl-mem-test rtl-npu-test smoke lint test synth clean venv
+.PHONY: help all check check-tools abi-check tools compiler m2-test tile-gemm-test runtime-graph-test rtl-lint rtl-synth rtl-core-test rtl-mem-lint rtl-mem-synth rtl-mem-test rtl-npu-test rtl-tile-test rtl-tile-lint rtl-tile-synth smoke lint test synth clean venv
 
 help:
 	@echo "CloverNPU targets:"
@@ -16,6 +16,7 @@ help:
 	@echo "  make m2-test      run assembler/ISS/compiler vertical-slice tests"
 	@echo "  make tile-gemm-test run dynamic-shape GEMM on the ISS tile engine"
 	@echo "  make runtime-graph-test run GEMM -> VEC ADD graph via libclover sim"
+	@echo "  make rtl-tile-test  FP32 add/mul and 16x16x16 MMA RTL tests"
 	@echo "  make rtl-lint     Verilator lint of the Clover-S core"
 	@echo "  make rtl-synth    Yosys read/proc/check of the Clover-S core"
 	@echo "  make rtl-core-test run the C programs on the RTL core"
@@ -32,7 +33,7 @@ help:
 
 all: check
 
-check: check-tools abi-check smoke m2-test tile-gemm-test runtime-graph-test rtl-lint rtl-synth rtl-core-test rtl-mem-lint rtl-mem-synth rtl-mem-test rtl-npu-test
+check: check-tools abi-check smoke m2-test tile-gemm-test runtime-graph-test rtl-lint rtl-synth rtl-core-test rtl-mem-lint rtl-mem-synth rtl-mem-test rtl-npu-test rtl-tile-lint rtl-tile-synth rtl-tile-test
 
 check-tools:
 	@./scripts/check_tools.sh
@@ -95,6 +96,16 @@ rtl-mem-test: tools
 rtl-npu-test: tools
 	$(PY) tests/rtl/run_npu_core_tests.py
 
+rtl-tile-lint:
+	verilator --lint-only -Wall -Wno-fatal --top-module clover_tile_mma \
+		-Irtl/common -Irtl/fp rtl/tile/clover_tile_mma.sv
+
+rtl-tile-synth:
+	yosys -q -p "read_verilog -sv -Irtl/common -Irtl/fp rtl/tile/clover_tile_mma.sv; hierarchy -check -top clover_tile_mma; proc; opt; check -assert"
+
+rtl-tile-test:
+	$(PY) tests/rtl/run_tile_tests.py
+
 abi-check:
 	@mkdir -p "$(BUILD)/abi"
 	$(CXX) -std=c++17 -Wall -Wextra -Iinclude \
@@ -125,7 +136,7 @@ venv:
 	.venv/bin/python -m pip install -q -r requirements.txt
 
 clean:
-	rm -rf "$(BUILD)/smoke" "$(BUILD)/abi" "$(CMAKE_BUILD)" "$(BUILD)/m2" "$(BUILD)/rtl" "$(BUILD)/mem" "$(BUILD)/core_mem" "$(BUILD)/npu_core"
+	rm -rf "$(BUILD)/smoke" "$(BUILD)/abi" "$(CMAKE_BUILD)" "$(BUILD)/m2" "$(BUILD)/rtl" "$(BUILD)/mem" "$(BUILD)/core_mem" "$(BUILD)/npu_core" "$(BUILD)/fp" "$(BUILD)/tile_mma"
 	rm -rf "$(BUILD)/host"
 	rm -rf "$(ROOT)/sim/smoke/__pycache__"
 	find "$(ROOT)/sim" -name '*.vvp' -delete
