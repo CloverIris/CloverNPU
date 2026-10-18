@@ -91,7 +91,14 @@
 - host → DMA kernel image → RUN → kernel 写结果 → DMA result → SIGNAL/END 通过。
 - 详见 [M4a 状态](09-m4a-core-integration.md)。
 
-### M4b · Tile engine（下一步）
+### M4b · 功能级 Tile Engine + GEMM（已完成，2026-10-18）
+
+- 编译器 tile 内建：`__clover_mma/vec/dma/wait/fence`。
+- ISS 功能级 MMA/VEC/DMA，支持 FP16/BF16/FP8/FP4 解包、FP32 累加。
+- `kernels/gemm.c` 动态 M/N/K；`16x16x16` 与 `17x19x23` bit-exact。
+- 详见 [M4b 状态](10-m4b-tile-software.md)。
+
+### M4c · RTL Tile Engine（下一步）
 
 目标：**描述符驱动的 MMA/VEC/CVT/REDUCE 在 RTL 上正确。**
 

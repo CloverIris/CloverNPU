@@ -34,6 +34,7 @@ class Iss {
     bool load_image(const std::vector<uint8_t> &image, std::string &error);
     IssResult run(std::string *trace_output = nullptr);
 
+    void boot(uint32_t entry, uint32_t sp, uint32_t arg);
     uint32_t reg(uint32_t index) const;
     uint32_t pc() const { return pc_; }
     uint32_t csr(uint32_t address) const;
@@ -57,6 +58,14 @@ class Iss {
     void raise(uint32_t cause, uint32_t tval);
     void syscall();
     void execute(uint32_t raw);
+
+    bool read_elem(uint32_t address, uint32_t dtype, float &value,
+                   std::string &error);
+    bool write_elem(uint32_t address, uint32_t dtype, float value,
+                    std::string &error);
+    bool tile_mma(uint32_t descriptor, std::string &error);
+    bool tile_vec(uint32_t descriptor, std::string &error);
+    bool tile_dma(uint32_t descriptor, std::string &error);
 
     IssOptions options_;
     std::vector<uint8_t> scratch_;

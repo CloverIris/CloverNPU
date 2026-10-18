@@ -1250,7 +1250,11 @@ class Analyzer {
     bool is_builtin(const std::string &name) const
     {
         return name == "__clover_exit" || name == "__clover_putchar" ||
-               name == "__clover_cycle" || name == "__clover_break";
+               name == "__clover_cycle" || name == "__clover_break" ||
+               name == "__clover_mma" || name == "__clover_vec" ||
+               name == "__clover_dma" || name == "__clover_wait" ||
+               name == "__clover_wait_timeout" || name == "__clover_fence" ||
+               name == "__clover_cache";
     }
 
     void add_local(Decl *decl)
@@ -2138,6 +2142,57 @@ class CodeGen {
 
     void gen_call(Expr *expr)
     {
+        if (expr->name == "__clover_mma" || expr->name == "__clover_vec" ||
+            expr->name == "__clover_dma") {
+            if (expr->args.empty()) {
+                error_ = expr->name + " expects a descriptor pointer";
+                return;
+            }
+            gen_expr(expr->args[0]);
+            emit("    tile." + (expr->name == "__clover_mma" ? std::string("mma")
+                               : expr->name == "__clover_vec" ? std::string("vec")
+                                                              : std::string("dma")) + " a0");
+            return;
+        }
+        if (expr->name == "__clover_wait") {
+            if (expr->args.empty()) {
+                emit("    li a0, 0");
+            } else {
+                gen_expr(expr->args[0]);
+            }
+            emit("    tile.wait a0, a0, zero");
+            return;
+        }
+        if (expr->name == "__clover_wait_timeout") {
+            if (expr->args.size() < 2) {
+                error_ = "__clover_wait_timeout expects mask, timeout";
+                return;
+            }
+            gen_expr(expr->args[0]);
+            push_a0();
+            gen_expr(expr->args[1]);
+            emit("    mv a1, a0");
+            pop("a0");
+            emit("    tile.wait a0, a0, a1");
+            return;
+        }
+        if (expr->name == "__clover_fence") {
+            emit("    tile.fence");
+            return;
+        }
+        if (expr->name == "__clover_cache") {
+            if (expr->args.size() < 2) {
+                error_ = "__clover_cache expects op, address";
+                return;
+            }
+            gen_expr(expr->args[0]);
+            push_a0();
+            gen_expr(expr->args[1]);
+            // CACHE encoding is op/address in rs1/rs2; keep the raw R-type
+            // form for now via the assembler's cache.<op> mnemonics.
+            error_ = "__clover_cache is not wired to a mnemonic yet";
+            return;
+        }
         if (expr->name == "__clover_exit") {
             if (!expr->args.empty()) {
                 gen_expr(expr->args[0]);

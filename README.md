@@ -2,7 +2,7 @@
 
 CloverNPU 是一个**面向研究与验证**的传统体制可编程 NPU。它不采用 GPGPU 的宽 SIMT/warp 模型，也不把卷积、ReLU 等算子做成硬连线宏；计算由标量控制核执行 C kernel，通过紧耦合的 tile 指令驱动可编程向量/矩阵引擎，配合 DMA、scratchpad 与显式片上缓存完成。
 
-> 当前状态：**M4a 完成**。主机可通过 AXI4-Lite CSR + doorbell 驱动命令队列；`RUN` 命令启动 5 级核执行 C kernel，DMA 搬 kernel/结果，`SIGNAL/END` 产生 completion/IRQ。Tile engine 是下一段。
+> 当前状态：**M4b-ISS 完成**。主机可驱动命令队列并 `RUN` C kernel；编译器支持 tile 内建；ISS 功能级 tile engine 已跑通动态 shape GEMM（16×16×16、17×19×23）。RTL tile engine 是下一段。
 
 ## 设计目标
 
@@ -67,6 +67,7 @@ make m2-test                # 23 个汇编/C 程序的 ISS 端到端回归
 make rtl-core-test          # 19 个 C 程序在 5 级 RTL 核上复现
 make rtl-mem-test           # scratchpad + AXI-CSR + DMA + CP + NPU end-to-end
 make rtl-npu-test           # host -> RUN C kernel -> DMA result -> completion
+make tile-gemm-test         # dynamic-shape GEMM on the ISS tile engine
 make rtl-mem-synth          # Yosys check of the M3/M4a blocks
 ```
 
@@ -82,6 +83,7 @@ make rtl-mem-synth          # Yosys check of the M3/M4a blocks
 - [M2 状态（软件切片 + RTL 核）](docs/07-m2-status.md)
 - [M3 状态（scratchpad + AXI + DMA + 命令队列）](docs/08-m3-status.md)
 - [M4a 状态（core 集成 + RUN）](docs/09-m4a-core-integration.md)
+- [M4b 状态（功能级 tile engine + GEMM）](docs/10-m4b-tile-software.md)
 
 ## 现在就能跑的 C
 
@@ -132,6 +134,7 @@ void gemm_block(const clover_mma_desc *d)
 - `rtl/top/clover_npu_mem.sv`：AXI4-Lite + CP + DMA + 5 级核 + scratchpad + AXI4 master。
 - `rtl/top/clover_core_mem.sv`：5 级核 + scratchpad 取指/读写适配器。
 - `RUN`：`src=entry`、`dst=args`、`dim0=stack_top`；boot 时 `ra=0`，`ret` 到 0 即 kernel 返回。
+- `kernels/gemm.c`：动态 M/N/K 的 16×16×16 block GEMM；ISS 功能级 tile engine 通过。
 
 ## M2b 的 RTL 核
 

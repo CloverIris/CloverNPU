@@ -6,7 +6,7 @@ CMAKE_BUILD := $(BUILD)/cmake
 CC      ?= cc
 CXX     ?= c++
 
-.PHONY: help all check check-tools abi-check tools compiler m2-test rtl-lint rtl-synth rtl-core-test rtl-mem-lint rtl-mem-synth rtl-mem-test rtl-npu-test smoke lint test synth clean venv
+.PHONY: help all check check-tools abi-check tools compiler m2-test tile-gemm-test rtl-lint rtl-synth rtl-core-test rtl-mem-lint rtl-mem-synth rtl-mem-test rtl-npu-test smoke lint test synth clean venv
 
 help:
 	@echo "CloverNPU targets:"
@@ -14,6 +14,7 @@ help:
 	@echo "  make abi-check    compile-time ABI layout assertions"
 	@echo "  make tools        build cloverc/clover-as/clover-iss/clover-objdump"
 	@echo "  make m2-test      run assembler/ISS/compiler vertical-slice tests"
+	@echo "  make tile-gemm-test run dynamic-shape GEMM on the ISS tile engine"
 	@echo "  make rtl-lint     Verilator lint of the Clover-S core"
 	@echo "  make rtl-synth    Yosys read/proc/check of the Clover-S core"
 	@echo "  make rtl-core-test run the C programs on the RTL core"
@@ -30,7 +31,7 @@ help:
 
 all: check
 
-check: check-tools abi-check smoke m2-test rtl-lint rtl-synth rtl-core-test rtl-mem-lint rtl-mem-synth rtl-mem-test rtl-npu-test
+check: check-tools abi-check smoke m2-test tile-gemm-test rtl-lint rtl-synth rtl-core-test rtl-mem-lint rtl-mem-synth rtl-mem-test rtl-npu-test
 
 check-tools:
 	@./scripts/check_tools.sh
@@ -43,6 +44,9 @@ compiler: tools
 
 m2-test: tools
 	$(PY) tests/m2/run_tests.py
+
+tile-gemm-test: tools
+	"$(CMAKE_BUILD)/bin/clover_gemm_test"
 
 rtl-lint:
 	verilator --lint-only -Wall -Wno-fatal \

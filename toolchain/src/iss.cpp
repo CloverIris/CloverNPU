@@ -1,6 +1,7 @@
 #include "clover/iss.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <limits>
@@ -30,6 +31,120 @@ std::string hex(uint32_t value)
     char buffer[16];
     std::snprintf(buffer, sizeof(buffer), "0x%08x", value);
     return buffer;
+}
+
+
+float f32_from_bits(uint32_t bits)
+{
+    float value = 0.0f;
+    std::memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
+uint32_t f32_to_bits(float value)
+{
+    uint32_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+float fp16_to_f32(uint16_t bits)
+{
+    _Float16 value;
+    std::memcpy(&value, &bits, sizeof(value));
+    return static_cast<float>(value);
+}
+
+uint16_t f32_to_fp16(float value)
+{
+    if (std::isfinite(value)) {
+        if (value > 65504.0f) value = 65504.0f;
+        if (value < -65504.0f) value = -65504.0f;
+    }
+    _Float16 half = static_cast<_Float16>(value);
+    uint16_t bits = 0;
+    std::memcpy(&bits, &half, sizeof(bits));
+    return bits;
+}
+
+float bf16_to_f32(uint16_t bits)
+{
+    return f32_from_bits(static_cast<uint32_t>(bits) << 16);
+}
+
+uint16_t f32_to_bf16(float value)
+{
+    uint32_t bits = f32_to_bits(value);
+    const uint32_t lsb = (bits >> 16) & 1u;
+    bits += 0x7FFFu + lsb;
+    return static_cast<uint16_t>(bits >> 16);
+}
+
+float fp8_e4m3_to_f32(uint8_t bits)
+{
+    const bool sign = (bits >> 7) != 0;
+    const uint32_t exp = (bits >> 3) & 0xFu;
+    const uint32_t mant = bits & 0x7u;
+    if (exp == 0xFu && mant == 0x7u) {
+        return std::numeric_limits<float>::quiet_NaN();
+    }
+    float value = 0.0f;
+    if (exp == 0) {
+        value = std::ldexp(static_cast<float>(mant) / 8.0f, -6);
+    } else {
+        value = std::ldexp(1.0f + static_cast<float>(mant) / 8.0f,
+                           static_cast<int>(exp) - 7);
+    }
+    return sign ? -value : value;
+}
+
+float fp8_e5m2_to_f32(uint8_t bits)
+{
+    const bool sign = (bits >> 7) != 0;
+    const uint32_t exp = (bits >> 2) & 0x1Fu;
+    const uint32_t mant = bits & 0x3u;
+    if (exp == 0x1Fu) {
+        if (mant) return std::numeric_limits<float>::quiet_NaN();
+        return sign ? -std::numeric_limits<float>::infinity()
+                    : std::numeric_limits<float>::infinity();
+    }
+    float value = 0.0f;
+    if (exp == 0) {
+        value = std::ldexp(static_cast<float>(mant) / 4.0f, -14);
+    } else {
+        value = std::ldexp(1.0f + static_cast<float>(mant) / 4.0f,
+                           static_cast<int>(exp) - 15);
+    }
+    return sign ? -value : value;
+}
+
+float fp4_to_f32(uint8_t bits)
+{
+    const bool sign = (bits >> 3) != 0;
+    const uint32_t exp = (bits >> 1) & 0x3u;
+    const uint32_t mant = bits & 0x1u;
+    float value = 0.0f;
+    if (exp == 0) {
+        value = mant ? 0.5f : 0.0f;
+    } else {
+        value = std::ldexp(1.0f + 0.5f * static_cast<float>(mant),
+                           static_cast<int>(exp) - 1);
+    }
+    return sign ? -value : value;
+}
+
+int dtype_size(uint32_t dtype)
+{
+    switch (dtype) {
+    case 0: return 4;
+    case 1:
+    case 2: return 2;
+    case 3:
+    case 4:
+    case 5: return 1;
+    case 6: return 4;
+    default: return 0;
+    }
 }
 
 }  // namespace
@@ -212,6 +327,319 @@ void Iss::syscall()
     }
 }
 
+
+void Iss::boot(uint32_t entry, uint32_t sp, uint32_t arg)
+{
+    pc_ = entry;
+    regs_[0] = 0;
+    regs_[1] = 0;
+    regs_[2] = sp;
+    regs_[10] = arg;
+    halted_ = false;
+    faulted_ = false;
+    trapped_ = false;
+    exit_code_ = 0;
+    error_.clear();
+    console_.clear();
+}
+
+bool Iss::read_elem(uint32_t address, uint32_t dtype, float &value,
+                    std::string &error)
+{
+    uint32_t raw = 0;
+    const int size = dtype_size(dtype);
+    if (size == 0) {
+        error = "unsupported dtype " + std::to_string(dtype);
+        return false;
+    }
+    if (!read_memory(address, static_cast<uint32_t>(size), raw)) {
+        error = "element read out of range";
+        return false;
+    }
+    switch (dtype) {
+    case 0: value = f32_from_bits(raw); return true;
+    case 1: value = fp16_to_f32(static_cast<uint16_t>(raw)); return true;
+    case 2: value = bf16_to_f32(static_cast<uint16_t>(raw)); return true;
+    case 3: value = fp8_e4m3_to_f32(static_cast<uint8_t>(raw)); return true;
+    case 4: value = fp8_e5m2_to_f32(static_cast<uint8_t>(raw)); return true;
+    case 5: value = fp4_to_f32(static_cast<uint8_t>(raw & 0xFu)); return true;
+    case 6: value = static_cast<float>(static_cast<int32_t>(raw)); return true;
+    default:
+        error = "unsupported MMA dtype";
+        return false;
+    }
+}
+
+bool Iss::write_elem(uint32_t address, uint32_t dtype, float value,
+                     std::string &error)
+{
+    uint32_t raw = 0;
+    int size = dtype_size(dtype);
+    if (size == 0) {
+        error = "unsupported dtype " + std::to_string(dtype);
+        return false;
+    }
+    switch (dtype) {
+    case 0:
+        raw = f32_to_bits(value);
+        break;
+    case 1:
+        raw = f32_to_fp16(value);
+        break;
+    case 2:
+        raw = f32_to_bf16(value);
+        break;
+    case 3: {
+        if (std::isnan(value)) { raw = 0x7Fu; break; }
+        uint32_t best = 0;
+        float best_diff = std::numeric_limits<float>::infinity();
+        for (uint32_t code = 0; code < 256; code++) {
+            const uint32_t exp = (code >> 3) & 0xFu;
+            const uint32_t mant = code & 0x7u;
+            if (exp == 0xFu && mant == 0x7u) continue;
+            const float candidate = fp8_e4m3_to_f32(static_cast<uint8_t>(code));
+            const float diff = std::fabs(candidate - value);
+            if (diff < best_diff) { best_diff = diff; best = code; }
+        }
+        raw = best;
+        break;
+    }
+    case 4: {
+        if (std::isnan(value)) { raw = 0x7Fu; break; }
+        uint32_t best = 0;
+        float best_diff = std::numeric_limits<float>::infinity();
+        for (uint32_t code = 0; code < 256; code++) {
+            const uint32_t exp = (code >> 2) & 0x1Fu;
+            if (exp == 0x1Fu) continue;
+            const float candidate = fp8_e5m2_to_f32(static_cast<uint8_t>(code));
+            const float diff = std::fabs(candidate - value);
+            if (diff < best_diff) { best_diff = diff; best = code; }
+        }
+        raw = best;
+        break;
+    }
+    case 5: {
+        uint32_t best = 0;
+        float best_diff = std::numeric_limits<float>::infinity();
+        for (uint32_t code = 0; code < 16; code++) {
+            const float candidate = fp4_to_f32(static_cast<uint8_t>(code));
+            const float diff = std::fabs(candidate - value);
+            if (diff < best_diff) { best_diff = diff; best = code; }
+        }
+        raw = best;
+        break;
+    }
+    case 6:
+        raw = static_cast<uint32_t>(static_cast<int32_t>(value));
+        break;
+    default:
+        error = "unsupported output dtype";
+        return false;
+    }
+    if (!write_memory(address, static_cast<uint32_t>(size), raw)) {
+        error = "element write out of range";
+        return false;
+    }
+    return true;
+}
+
+bool Iss::tile_mma(uint32_t descriptor, std::string &error)
+{
+    uint32_t d[16] = {};
+    for (int i = 0; i < 16; i++) {
+        if (!read_memory(descriptor + 4u * static_cast<uint32_t>(i), 4, d[i])) {
+            error = "MMA descriptor out of range";
+            return false;
+        }
+    }
+    if (d[0] != 0x31414D4Du) {
+        error = "bad MMA descriptor magic";
+        return false;
+    }
+    const uint32_t flags = d[1];
+    const uint32_t m = d[2];
+    const uint32_t n = d[3];
+    const uint32_t k = d[4];
+    if (m == 0 || m > 16 || n == 0 || n > 16 || k == 0 || k > 16) {
+        error = "MMA M/N/K out of range";
+        return false;
+    }
+    const uint32_t a_type = (flags >> 5) & 0x7u;
+    const uint32_t b_type = (flags >> 8) & 0x7u;
+    const uint32_t c_type = (flags >> 11) & 0x7u;
+    const int a_size = dtype_size(a_type);
+    const int b_size = dtype_size(b_type);
+    const int c_size = dtype_size(c_type);
+    if (a_size == 0 || b_size == 0 || c_size == 0 || a_type == 6 || b_type == 6) {
+        error = "unsupported MMA dtype";
+        return false;
+    }
+
+    const bool accumulate = (flags & 1u) != 0;
+    const bool transpose_a = (flags & 2u) != 0;
+    const bool transpose_b = (flags & 4u) != 0;
+    const bool relu = (flags & 8u) != 0;
+    const bool a_scale_en = (flags & (1u << 14)) != 0;
+    const bool b_scale_en = (flags & (1u << 15)) != 0;
+    const bool a_per_channel = (flags & (1u << 16)) != 0;
+    const bool b_per_channel = (flags & (1u << 17)) != 0;
+    const bool post_scale_en = (flags & (1u << 18)) != 0;
+    const bool post_bias_en = (flags & (1u << 19)) != 0;
+
+    float a_scale = 1.0f;
+    float b_scale = 1.0f;
+    if (a_scale_en && !a_per_channel) {
+        uint32_t raw = 0;
+        if (!read_memory(d[11], 4, raw)) { error = "A scale address"; return false; }
+        a_scale = f32_from_bits(raw);
+    }
+    if (b_scale_en && !b_per_channel) {
+        uint32_t raw = 0;
+        if (!read_memory(d[12], 4, raw)) { error = "B scale address"; return false; }
+        b_scale = f32_from_bits(raw);
+    }
+    const float post_scale = post_scale_en ? f32_from_bits(d[13]) : 1.0f;
+    const float post_bias = post_bias_en ? f32_from_bits(d[14]) : 0.0f;
+
+    for (uint32_t mi = 0; mi < m; mi++) {
+        float row_a_scale = a_scale;
+        if (a_scale_en && a_per_channel) {
+            uint32_t raw = 0;
+            if (!read_memory(d[11] + 4u * mi, 4, raw)) { error = "A channel scale"; return false; }
+            row_a_scale = f32_from_bits(raw);
+        }
+        for (uint32_t ni = 0; ni < n; ni++) {
+            float col_b_scale = b_scale;
+            if (b_scale_en && b_per_channel) {
+                uint32_t raw = 0;
+                if (!read_memory(d[12] + 4u * ni, 4, raw)) { error = "B channel scale"; return false; }
+                col_b_scale = f32_from_bits(raw);
+            }
+            const uint32_t c_addr = d[7] + mi * d[10] + ni * static_cast<uint32_t>(c_size);
+            float acc = 0.0f;
+            if (accumulate) {
+                if (!read_elem(c_addr, c_type, acc, error)) return false;
+            }
+            for (uint32_t ki = 0; ki < k; ki++) {
+                const uint32_t a_addr = transpose_a
+                    ? d[5] + ki * d[8] + mi * static_cast<uint32_t>(a_size)
+                    : d[5] + mi * d[8] + ki * static_cast<uint32_t>(a_size);
+                const uint32_t b_addr = transpose_b
+                    ? d[6] + ni * d[9] + ki * static_cast<uint32_t>(b_size)
+                    : d[6] + ki * d[9] + ni * static_cast<uint32_t>(b_size);
+                float av = 0.0f;
+                float bv = 0.0f;
+                if (!read_elem(a_addr, a_type, av, error)) return false;
+                if (!read_elem(b_addr, b_type, bv, error)) return false;
+                av = av * row_a_scale;
+                bv = bv * col_b_scale;
+                const float product = av * bv;
+                acc = acc + product;
+            }
+            if (post_scale_en) acc = acc * post_scale;
+            if (post_bias_en) acc = acc + post_bias;
+            if (relu && acc < 0.0f) acc = 0.0f;
+            if (!write_elem(c_addr, c_type, acc, error)) return false;
+        }
+    }
+    return true;
+}
+
+bool Iss::tile_vec(uint32_t descriptor, std::string &error)
+{
+    uint32_t d[16] = {};
+    for (int i = 0; i < 16; i++) {
+        if (!read_memory(descriptor + 4u * static_cast<uint32_t>(i), 4, d[i])) {
+            error = "VEC descriptor out of range";
+            return false;
+        }
+    }
+    if (d[0] != 0x31434556u) {
+        error = "bad VEC descriptor magic";
+        return false;
+    }
+    const uint32_t flags = d[1];
+    const uint32_t count = d[2];
+    const uint32_t a_addr = d[3];
+    const uint32_t b_addr = d[4];
+    const uint32_t c_addr = d[5];
+    const uint32_t a_stride = d[6];
+    const uint32_t b_stride = d[7];
+    const uint32_t c_stride = d[8];
+    const uint32_t src_type = d[9];
+    const uint32_t dst_type = d[10];
+    const uint32_t op = flags & 0xFu;
+    if (op > 9) {
+        error = "unsupported VEC op";
+        return false;
+    }
+    for (uint32_t i = 0; i < count; i++) {
+        float av = 0.0f;
+        float bv = 0.0f;
+        if (!read_elem(a_addr + i * a_stride, src_type, av, error)) return false;
+        if (op != 5 && op != 6 && op != 7 && op != 9) {
+            if (!read_elem(b_addr + i * b_stride, src_type, bv, error)) return false;
+        }
+        float result = av;
+        switch (op) {
+        case 0: result = av + bv; break;
+        case 1: result = av - bv; break;
+        case 2: result = av * bv; break;
+        case 3: result = av > bv ? av : bv; break;
+        case 4: result = av < bv ? av : bv; break;
+        case 5: result = av < 0.0f ? 0.0f : av; break;
+        case 6: result = av < 0.0f ? -av : av; break;
+        case 7: result = -av; break;
+        case 8: result = av * bv + f32_from_bits(d[14]); break;
+        case 9: result = av; break;
+        default: break;
+        }
+        result = result * f32_from_bits(d[13]);
+        if (flags & (1u << 5)) {
+            if (result < 0.0f) result = 0.0f;
+        }
+        if (!write_elem(c_addr + i * c_stride, dst_type, result, error)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Iss::tile_dma(uint32_t descriptor, std::string &error)
+{
+    uint32_t d[16] = {};
+    for (int i = 0; i < 16; i++) {
+        if (!read_memory(descriptor + 4u * static_cast<uint32_t>(i), 4, d[i])) {
+            error = "DMA descriptor out of range";
+            return false;
+        }
+    }
+    if (d[0] != 0x31414D44u) {
+        error = "bad DMA descriptor magic";
+        return false;
+    }
+    const uint32_t src = d[2];
+    const uint32_t dst = d[3];
+    const uint32_t row_bytes = d[4];
+    const uint32_t rows = d[5];
+    const uint32_t src_stride = d[6];
+    const uint32_t dst_stride = d[7];
+    for (uint32_t r = 0; r < rows; r++) {
+        for (uint32_t i = 0; i < row_bytes; i++) {
+            uint32_t value = 0;
+            if (!read_memory(src + r * src_stride + i, 1, value)) {
+                error = "DMA source out of range";
+                return false;
+            }
+            if (!write_memory(dst + r * dst_stride + i, 1, value)) {
+                error = "DMA destination out of range";
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 void Iss::execute(uint32_t raw)
 {
     const Decoded d = decode(raw, pc_);
@@ -233,6 +661,13 @@ void Iss::execute(uint32_t raw)
         break;
     case Opcode::Jalr: {
         const uint32_t target = (regs_[d.rs1] + static_cast<uint32_t>(d.imm)) & ~1u;
+        if (d.rd == 0 && target == 0) {
+            // Kernel-return sentinel: CP boots with ra=0; `ret` halts and
+            // returns a0 as the kernel status.
+            halted_ = true;
+            exit_code_ = static_cast<int>(regs_[10] & 0xFFu);
+            return;
+        }
         const uint32_t link = pc_ + 4;
         set_reg(d.rd, link);
         next(target);
@@ -465,15 +900,25 @@ void Iss::execute(uint32_t raw)
         set_reg(d.rd, old);
         break;
     }
-    case Opcode::Tile:
-        // Functional tile-engine model is added in M4.  For now TILE.WAIT
-        // succeeds and the other TILE ops are accepted no-ops.
-        if (d.funct3 == 3) {
-            set_reg(d.rd, 0);
-        } else if (d.funct3 > 4) {
-            raise(2, raw);
+    case Opcode::Tile: {
+        std::string tile_error;
+        bool ok = true;
+        switch (d.funct3) {
+        case 0: ok = tile_mma(regs_[d.rs1], tile_error); break;
+        case 1: ok = tile_vec(regs_[d.rs1], tile_error); break;
+        case 2: ok = tile_dma(regs_[d.rs1], tile_error); break;
+        case 3: set_reg(d.rd, 0); break;
+        case 4: break; // TILE.FENCE
+        default: raise(2, raw); return;
+        }
+        if (!ok) {
+            halted_ = true;
+            faulted_ = true;
+            exit_code_ = 1;
+            error_ = "tile: " + tile_error;
         }
         break;
+    }
     default:
         raise(2, raw);
         break;
@@ -495,7 +940,8 @@ IssResult Iss::run(std::string *trace_output)
             if (options_.trace || trace_output) {
                 std::ostringstream os;
                 os << hex(pc_) << "  " << hex(raw) << "  " << decode(raw, pc_).text
-                   << "\n";
+                   << "  a0=" << hex(regs_[10]) << " t0=" << hex(regs_[5])
+                   << " s0=" << hex(regs_[8]) << "\n";
                 if (trace_output) {
                     *trace_output += os.str();
                 } else {
